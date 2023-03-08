@@ -1,0 +1,11 @@
+[package]
+name = "doomthing"
+description = "doomthing"
+version = "1.0.0"
+authors = ["LukeGrahamLandry"]
+edition = "2021"
+
+[dependencies.sdl2]
+version = "0.35"
+default-features = false
+features = ["ttf","image","gfx","mixer"]
