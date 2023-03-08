@@ -1,3 +1,6 @@
+mod world;
+mod player;
+mod camera;
 
 extern crate sdl2;
 
@@ -11,8 +14,10 @@ use sdl2::surface::Surface;
 use std::{env, thread};
 use std::path::Path;
 use std::time::Instant;
+use crate::world::World;
+use std::collections::HashSet;
 
-pub fn run(png: &Path) -> Result<(), String> {
+pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
     let _image_context = sdl2::image::init(InitFlag::PNG | InitFlag::JPG)?;
@@ -27,6 +32,8 @@ pub fn run(png: &Path) -> Result<(), String> {
         .software()
         .build()
         .map_err(|e| e.to_string())?;
+
+    let mut world = World::new();
 
     canvas.clear();
     canvas.present();
@@ -49,31 +56,38 @@ pub fn run(png: &Path) -> Result<(), String> {
                 Event::MouseButtonDown { x, y, .. } => {
                     println!("Click ({}, {})", x, y);
                     canvas.fill_rect(Rect::new(x, y, 10, 10))?;
-                    canvas.present();
                 }
                 _ => {}
             }
         }
 
         let keys =  events.keyboard_state();
-        let keys = keys.pressed_scancodes().filter_map(Keycode::from_scancode);
-        for x in keys {
-            println!("Key {}", x);
-        }
+        let keys: Vec<Keycode> = keys.pressed_scancodes().filter_map(Keycode::from_scancode).collect();
+        // for x in keys {
+        //     println!("Key {}", x);
+        // }
 
-        let duration = start.elapsed();
+        let duration = start.elapsed().as_secs_f64();
         start = Instant::now();
-        println!("Frame time {:?}", duration);
+        println!("Frame time {}", duration);
 
         let sleep_time = std::time::Duration::from_millis(10);
         thread::sleep(sleep_time);
+
+        world.update(duration, &keys);
+
+        canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
+        canvas.clear();
+        canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
+        camera::render(&world, &mut canvas, duration);
+        canvas.present();
     }
 
     Ok(())
 }
 
 fn main() -> Result<(), String> {
-    run(Path::new("/Users/luke/Documents/40009893.png"))?;
+    run()?;
     Ok(())
 }
 
