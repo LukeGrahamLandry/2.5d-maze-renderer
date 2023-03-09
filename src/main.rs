@@ -1,8 +1,9 @@
-mod world;
-mod player;
-mod camera;
-
 extern crate sdl2;
+
+use std::{env, thread};
+use std::collections::HashSet;
+use std::path::Path;
+use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::image::{InitFlag, LoadSurface};
@@ -11,11 +12,13 @@ use sdl2::mouse::Cursor;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::surface::Surface;
-use std::{env, thread};
-use std::path::Path;
-use std::time::Instant;
+
 use crate::world::World;
-use std::collections::HashSet;
+
+mod world;
+mod player;
+mod camera;
+mod mth;
 
 pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
@@ -33,7 +36,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = World::new();
+    let mut world = World::create_example();
 
     canvas.clear();
     canvas.present();
@@ -69,9 +72,8 @@ pub fn run() -> Result<(), String> {
 
         let duration = start.elapsed().as_secs_f64();
         start = Instant::now();
-        println!("Frame time {}", duration);
 
-        let sleep_time = std::time::Duration::from_millis(10);
+        let sleep_time = std::time::Duration::from_millis(40);
         thread::sleep(sleep_time);
 
         world.update(duration, &keys);
