@@ -34,6 +34,7 @@ pub fn run() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let mut world = World::create_example();
+    let mut first_person_rendering = false;
 
     canvas.clear();
     canvas.present();
@@ -52,6 +53,9 @@ pub fn run() -> Result<(), String> {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'mainloop,
+
+                Event::KeyDown { keycode: Some(Keycode::Space), .. }
+                => first_person_rendering = !first_person_rendering,
 
                 Event::MouseButtonDown { x, y, .. } => {
                     println!("Click ({}, {})", x, y);
@@ -73,8 +77,13 @@ pub fn run() -> Result<(), String> {
 
         canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
         canvas.clear();
-        canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
-        camera::render2d(&world, &mut canvas, duration);
+
+        if first_person_rendering {
+            camera::render3d(&world, &mut canvas, duration);
+        } else {
+            camera::render2d(&world, &mut canvas, duration);
+        }
+
         canvas.present();
     }
 

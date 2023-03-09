@@ -102,7 +102,7 @@ pub(crate) struct Wall {
 impl Wall {
     pub(crate) fn hit_by(&self, origin: &Vector2, direction: &Vector2) -> bool {
         let ray = LineSegment2::from(*origin, *direction);
-        self.line.overlap(&ray)
+        self.line.overlaps(&ray)
     }
 
     // transform to same position but relative to the new wall, accounting for walls of different sizes.

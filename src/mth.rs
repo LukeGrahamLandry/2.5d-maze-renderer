@@ -1,7 +1,7 @@
+use std::f64::consts::PI;
 use std::fmt;
 
 use sdl2::libc::c_int;
-use sdl2::rect::Point;
 use sdl2::sys::SDL_Point;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -13,11 +13,13 @@ pub struct Vector2 {
 const EPSILON: f64 = 0.000001;
 
 impl Vector2 {
+    pub(crate) const NAN: Vector2 = Vector2::of(f64::NAN, f64::NAN);
+
     pub fn new() -> Vector2 {
         Vector2 { x: 0.0, y: 0.0 }
     }
 
-    pub fn of(x: f64, y: f64) -> Vector2 {
+    pub const fn of(x: f64, y: f64) -> Vector2 {
         Vector2 { x, y }
     }
 
@@ -34,6 +36,10 @@ impl Vector2 {
         }
     }
 
+    pub(crate) fn dot(&self, other: &Vector2) -> f64 {
+        return (self.x * other.x) + (self.y * other.y);
+    }
+
     pub(crate) fn subtract(&self, other: &Vector2) -> Vector2 {
         Vector2::of(self.x - other.x, self.y - other.y)
     }
@@ -48,6 +54,27 @@ impl Vector2 {
 
     pub(crate) fn negate(&self) -> Vector2 {
         Vector2::of(0.0, 0.0).subtract(self)
+    }
+
+    pub(crate) fn from_angle(radians_from_origin: f64, length: f64) -> Vector2 {
+        Vector2::of(radians_from_origin.cos() * length, radians_from_origin.sin() * length)
+    }
+
+    pub(crate) fn rotate(&self, delta_radians: f64) -> Vector2 {
+        Vector2::from_angle(self.angle_from_origin() + delta_radians, self.length())
+    }
+
+    pub(crate) fn angle_from_origin(&self) -> f64 {
+        if self.y >= 0.0 {
+            self.normalize().x.acos()
+        } else {
+            self.normalize().x.acos() + PI
+        }
+
+    }
+
+    pub(crate) fn is_nan(&self) -> bool {
+        self.x.is_nan() || self.y.is_nan()
     }
 
     pub fn almost_equal(&self, other: &Vector2) -> bool {
@@ -73,8 +100,8 @@ pub struct LineSegment2 {
 }
 
 impl LineSegment2 {
-    pub(crate) fn of(a: Vector2, b: Vector2) -> LineSegment2 {
-        LineSegment2 {a, b}
+    pub(crate) fn of(start_point: Vector2, end_point: Vector2) -> LineSegment2 {
+        LineSegment2 {a: start_point, b: end_point}
     }
 
     pub(crate) fn from(origin: Vector2, direction: Vector2) -> LineSegment2 {
@@ -131,7 +158,7 @@ impl LineSegment2 {
         self.closest_point(point).subtract(point)
     }
 
-    // on the infinite algebraic line
+    /// Find the closest point on the algebraic line.
     pub(crate) fn closest_point(&self, point: &Vector2) -> Vector2 {
         if self.is_vertical() {
             return Vector2::of(self.a.x, point.y);
@@ -147,27 +174,35 @@ impl LineSegment2 {
             b: Vector2::of(self.a.x + 1.0, self.a.y + goal_slope),
         };
 
-        self.intersection(&new_line)
+        self.algebraic_intersection(&new_line)
     }
 
-    pub(crate) fn overlap(&self, other: &LineSegment2) -> bool {
-        let hit = self.intersection(&other);
-
-        // if the algebraic lines intersect
-        !hit.x.is_nan() && !hit.y.is_nan()
-        // and the point is in the range of both line segments
-        && self.contains(&hit) && other.contains(&hit)
+    /// Returns true if the algebraic lines intersect and that point in the range of both line segments.
+    pub(crate) fn overlaps(&self, other: &LineSegment2) -> bool {
+        !self.intersection(other).is_nan()
     }
 
-    // is the point on the actual line segment (not just the algebraic line)
+    /// Returns true if the point is on the actual line segment (not just the algebraic line).
+    /// Correctly returns false for nan points because any comparison against nan is false.
     pub(crate) fn contains(&self, point: &Vector2) -> bool {
         point.y >= self.a.y.min(self.b.y) && point.y <= self.a.y.max(self.b.y)
             && point.x >= self.a.x.min(self.b.x) && point.x <= self.a.x.max(self.b.x)
     }
 
-    // The point might not actually be on the line segment, if the infinite algebraic line intersect but are far apart.
-    // doesn't handle when they're the same line.
+    /// Returns NAN if the point is not in the range of both segments.
     pub(crate) fn intersection(&self, other: &LineSegment2) -> Vector2 {
+        let hit = self.algebraic_intersection(other);
+
+        if self.contains(&hit) && other.contains(&hit) {
+            hit
+        } else {
+            Vector2::NAN
+        }
+    }
+
+    /// The point might not actually be on the line segment, if the infinite algebraic line intersect but are far apart.
+    /// Doesn't handle infinite points when they're the same line.
+    pub(crate) fn algebraic_intersection(&self, other: &LineSegment2) -> Vector2 {
         let mut a = [-self.slope(), 1.0, self.y_intercept()];
         let mut b = [-other.slope(), 1.0, other.y_intercept()];
 
@@ -258,8 +293,8 @@ mod tests {
 
         let a = LineSegment2::algebraic(3.0, 2.0);
         let b = LineSegment2::algebraic(2.0, 3.0);
-        assert_eq_vec(Vector2::of(1.0, 5.0), a.intersection(&b));
-        assert_eq_vec(Vector2::of(1.0, 5.0), b.intersection(&a));
+        assert_eq_vec(Vector2::of(1.0, 5.0), a.algebraic_intersection(&b));
+        assert_eq_vec(Vector2::of(1.0, 5.0), b.algebraic_intersection(&a));
 
         let h = LineSegment2::horizontal(3.0);
         assert!(h.is_horizontal());
@@ -276,8 +311,8 @@ mod tests {
     }
 
     fn assert_intersect(a: LineSegment2, b: LineSegment2, x: f64, y: f64){
-        assert_eq_vec(a.intersection(&b), Vector2::of(x, y));
-        assert_eq_vec(b.intersection(&a), Vector2::of(x, y));
+        assert_eq_vec(a.algebraic_intersection(&b), Vector2::of(x, y));
+        assert_eq_vec(b.algebraic_intersection(&a), Vector2::of(x, y));
     }
 
     fn assert_eq_vec(a: Vector2, b: Vector2){
