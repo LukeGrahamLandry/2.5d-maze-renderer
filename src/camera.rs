@@ -12,10 +12,25 @@ pub(crate) fn render(world: &World, canvas: &mut WindowCanvas, _delta_time: f64)
     canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
     canvas.fill_rect(Rect::new(x - half_player_size, y - half_player_size, (half_player_size * 2) as u32, (half_player_size * 2) as u32)).expect("Draw failed");
 
+    let mut i = 0;
     for region in world.regions.iter() {
         for wall in region.walls.iter() {
+            if world.player.region_index == i {
+                if wall.has_next {
+                    canvas.set_draw_color(Color::RGBA(0, 255, 255, 255));
+                } else {
+                    canvas.set_draw_color(Color::RGBA(0, 255, 0, 255));
+                }
+
+            } else {
+                canvas.set_draw_color(Color::RGBA(0, 0, 255, 255));
+            }
+
+
             canvas.draw_line(wall.a.sdl(), wall.b.sdl()).expect("Draw failed");
         }
+
+        i += 1;
     }
 
     canvas.set_draw_color(Color::RGBA(255, 0, 0, 255));

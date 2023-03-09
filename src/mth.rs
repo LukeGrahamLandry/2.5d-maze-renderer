@@ -8,12 +8,6 @@ pub struct Vector2 {
 }
 
 impl Vector2 {
-    pub(crate) fn copy(other: &Vector2) -> Vector2 {
-        Vector2::of(other.x, other.y)
-    }
-}
-
-impl Vector2 {
     pub fn new() -> Vector2 {
         Vector2 { x: 0.0, y: 0.0 }
     }
@@ -26,11 +20,12 @@ impl Vector2 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 
-    pub fn normalize(&mut self){
+    pub fn normalize(&self) -> Vector2 {
         let len = self.length();
         if len != 0.0 {
-            self.x /= len;
-            self.y /= len;
+            Vector2::of(self.x / len, self.y / len)
+        } else {
+            Vector2::new()
         }
     }
 
@@ -44,6 +39,14 @@ impl Vector2 {
 
     pub(crate) fn scale(&self, s: f64) -> Vector2 {
         Vector2::of(self.x * s, self.y * s)
+    }
+
+    pub(crate) fn negate(&self) -> Vector2 {
+        Vector2::of(0.0, 0.0).subtract(self)
+    }
+
+    pub(crate) fn copy(other: &Vector2) -> Vector2 {
+        Vector2::of(other.x, other.y)
     }
 
     pub fn sdl(&self) -> SDL_Point {

@@ -37,12 +37,26 @@ impl World {
                 _ => (),
             }
         }
-        self.player.direction.normalize();
+        self.player.direction = self.player.direction.normalize();
 
         let mut hit_wall = false;
         let player_size = 10.0;
-        for wall in self.regions[self.player.region_index].walls.iter() {
+        let last_region = &self.regions[self.player.region_index];
+        for wall in last_region.walls.iter() {
             if wall.hit_by(&self.player.pos, &self.player.direction.scale(player_size)) {
+                if wall.has_next {
+                    self.player.region_index = wall.next_region.unwrap();
+                    let next_region = &self.regions[self.player.region_index];
+
+                    // transform to same position but relative to the new wall, accounting for walls of different sizes.
+                    let last_offset = self.player.pos.subtract(&wall.a);
+                    let fraction = last_offset.length() / wall.direction().length();
+                    let new_wall = &next_region.walls[wall.next_wall.unwrap()];
+                    let new_offset = new_wall.direction().negate().scale(fraction);
+                    self.player.pos = new_wall.a.add(&new_offset);
+                    break
+                }
+
                 hit_wall = true;
             }
         }
@@ -56,6 +70,27 @@ impl World {
     pub(crate) fn create_example() -> World {
         let mut world = World::new();
         world.regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
+        world.regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
+        world.regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
+
+        world.regions[0].walls[0].has_next = true;
+        world.regions[0].walls[0].next_region = Some(1);
+        world.regions[0].walls[0].next_wall = Some(1);
+
+        world.regions[1].walls[1].has_next = true;
+        world.regions[1].walls[1].next_region = Some(0);
+        world.regions[1].walls[1].next_wall = Some(0);
+
+        world.regions[1].walls[2].has_next = true;
+        world.regions[1].walls[2].next_region = Some(2);
+        world.regions[1].walls[2].next_wall = Some(3);
+
+        world.regions[2].walls[3].has_next = true;
+        world.regions[2].walls[3].next_region = Some(1);
+        world.regions[2].walls[3].next_wall = Some(2);
+
+        world.player.pos.x = 150.0;
+        world.player.pos.y = 250.0;
 
         world
     }
@@ -77,22 +112,30 @@ impl Region {
         region.walls.push(Wall {
             a: Vector2::of(x1, y1),
             b: Vector2::of(x2, y1),
-            next: -1
+            has_next: false,
+            next_region: None,
+            next_wall: None,
         });
         region.walls.push(Wall {
             a: Vector2::of(x1, y2),
             b: Vector2::of(x2, y2),
-            next: -1
+            has_next: false,
+            next_region: None,
+            next_wall: None,
         });
         region.walls.push(Wall {
             a: Vector2::of(x1, y1),
             b: Vector2::of(x1, y2),
-            next: -1
+            has_next: false,
+            next_region: None,
+            next_wall: None,
         });
         region.walls.push(Wall {
             a: Vector2::of(x2, y1),
             b: Vector2::of(x2, y2),
-            next: -1
+            has_next: false,
+            next_region: None,
+            next_wall: None,
         });
 
         region
@@ -102,7 +145,9 @@ impl Region {
 pub(crate) struct Wall {
     pub(crate) a: Vector2,
     pub(crate) b: Vector2,
-    pub(crate) next: i32
+    pub(crate) has_next: bool,
+    pub(crate) next_region: Option<usize>,
+    pub(crate) next_wall: Option<usize>
 }
 
 impl Wall {
@@ -136,5 +181,9 @@ impl Wall {
         }
 
         facing && at_wall && dist > 0.0 && dist < direction.length()
+    }
+
+    fn direction(&self) -> Vector2 {
+        self.a.subtract(&self.b)
     }
 }
