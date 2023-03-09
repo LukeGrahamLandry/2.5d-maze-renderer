@@ -113,8 +113,8 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             dist = VIEW_DIST;
         }
 
-        let height = (1.0 / dist * SCREEN_HEIGHT as f64 * 20.0).min(SCREEN_HEIGHT as f64);
-        println!("{} {} {}", x, dist, height);
+        let height = dist * ((PI / 4.0) as f64).tan();
+        println!("{} {}", dist, height);
         canvas.draw_line(Vector2::of(x as f64, SCREEN_HEIGHT as f64).sdl(), Vector2::of(x as f64, (SCREEN_HEIGHT - height as u32) as f64).sdl()).expect("Draw failed");
     }
 }

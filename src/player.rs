@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use sdl2::keyboard::Keycode;
 
 use crate::mth::{LineSegment2, Vector2};
@@ -10,6 +11,8 @@ pub(crate) struct Player {
     pub(crate) region_index: usize
 }
 
+const MOVE_SPEED: f64 = 200.0;
+const TURN_SPEED: f64 = 0.1;
 impl Player {
     pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Region>, delta_time: f64) {
         if self.update_direction(pressed) {
@@ -38,40 +41,37 @@ impl Player {
     }
 
     fn update_direction(&mut self, pressed: &Vec<Keycode>) -> bool {
-        let mut direction = Vector2::new();
+        self.speed = 0.0;
         for key in pressed {
             match key {
                 Keycode::W => {
-                    direction.y = -1.0;
+                    self.speed += MOVE_SPEED;
                 }
                 Keycode::S => {
-                    direction.y = 1.0;
+                    self.speed -= MOVE_SPEED;
                 }
                 Keycode::A => {
-                    direction.x = -1.0;
+                    self.direction = self.direction.rotate(-TURN_SPEED);
                 }
                 Keycode::D => {
-                    direction.x = 1.0;
+                    self.direction = self.direction.rotate(TURN_SPEED);
                 }
                 _ => (),
             }
         }
 
-        if direction.is_zero() {
-            false
-        } else {
-            self.direction = direction.normalize();
-            true
-        }
+        println!("{} {}", self.direction, self.direction.angle_from_origin());
+
+        self.speed != 0.0
     }
 }
 
 impl Player {
     pub(crate) fn new() -> Player {
         Player {
-            pos: Vector2::new(),
+            pos: Vector2::zero(),
             direction: Vector2::of(1.0, 0.0),
-            speed: 200.0,
+            speed: 0.0,
             region_index: 0
         }
     }

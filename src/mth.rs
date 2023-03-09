@@ -10,12 +10,12 @@ pub struct Vector2 {
     pub y: f64
 }
 
-const EPSILON: f64 = 0.000001;
+pub const EPSILON: f64 = 0.000001;
 
 impl Vector2 {
     pub(crate) const NAN: Vector2 = Vector2::of(f64::NAN, f64::NAN);
 
-    pub fn new() -> Vector2 {
+    pub fn zero() -> Vector2 {
         Vector2 { x: 0.0, y: 0.0 }
     }
 
@@ -32,7 +32,7 @@ impl Vector2 {
         if len != 0.0 {
             Vector2::of(self.x / len, self.y / len)
         } else {
-            Vector2::new()
+            Vector2::zero()
         }
     }
 
@@ -61,14 +61,19 @@ impl Vector2 {
     }
 
     pub(crate) fn rotate(&self, delta_radians: f64) -> Vector2 {
-        Vector2::from_angle(self.angle_from_origin() + delta_radians, self.length())
+        // Vector2::from_angle(self.angle_from_origin() + delta_radians, self.length())
+        let b = delta_radians;
+        let x = b.cos() * self.x - b.sin() * self.y;
+        let y = b.sin() * self.x + b.cos() * self.y;
+        Vector2::of(x, y)
     }
 
     pub(crate) fn angle_from_origin(&self) -> f64 {
-        if self.y >= 0.0 {
-            self.normalize().x.acos()
+        let a = self.normalize().dot(&Vector2::of(1.0, 0.0)).acos();
+        if self.x >= 0.0 {
+            a
         } else {
-            self.normalize().x.acos() + PI
+            -a
         }
 
     }
@@ -310,6 +315,31 @@ mod tests {
         assert_intersect(h, v, -2.0, 3.0);
     }
 
+    #[test]
+    fn vector_angles() {
+        let angles = [
+            (Vector2::of(1.0, 0.0), 0.0),
+            (Vector2::of(0.0, 1.0), PI / 2.0),
+            (Vector2::of(-1.0, 0.0), PI),
+            (Vector2::of(0.0, -1.0), 3.0 * PI / 2.0),
+            (Vector2::of(1.0, 0.0), 2.0 * PI),
+        ];
+
+        let mut start = angles[0].0.clone();
+        for check in angles {
+            let direction = Vector2::from_angle(check.1, 1.0);
+            if !check.0.almost_equal(&direction) {
+                panic!("[{} rad] Expected {} but got {}", check.1, check.0, direction);
+            }
+
+            if !check.0.almost_equal(&start){
+                panic!("[{} rad] Expected {} but got {}", check.1, check.0, start);
+            }
+
+            start = start.rotate(PI / 2.0);
+        }
+    }
+
     fn assert_intersect(a: LineSegment2, b: LineSegment2, x: f64, y: f64){
         assert_eq_vec(a.algebraic_intersection(&b), Vector2::of(x, y));
         assert_eq_vec(b.algebraic_intersection(&a), Vector2::of(x, y));
@@ -318,6 +348,12 @@ mod tests {
     fn assert_eq_vec(a: Vector2, b: Vector2){
         if !a.almost_equal(&b) {
             panic!("{:?} != {:?}", a, b);
+        }
+    }
+
+    fn assert_eq_f(a: f64, b: f64){
+        if (a - b).abs() > EPSILON {
+            panic!("{} != {}", a, b);
         }
     }
 
