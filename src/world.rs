@@ -1,7 +1,6 @@
-use std::cmp::{max, min};
 use sdl2::keyboard::Keycode;
 
-use crate::mth::Vector2;
+use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 
 pub struct World {
@@ -18,53 +17,7 @@ impl World {
     }
 
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>){
-        self.player.direction.x = 0.0;
-        self.player.direction.y = 0.0;
-        for key in pressed {
-            match key {
-                Keycode::W => {
-                    self.player.direction.y = -1.0;
-                }
-                Keycode::S => {
-                    self.player.direction.y = 1.0;
-                }
-                Keycode::A => {
-                    self.player.direction.x = -1.0;
-                }
-                Keycode::D => {
-                    self.player.direction.x = 1.0;
-                }
-                _ => (),
-            }
-        }
-        self.player.direction = self.player.direction.normalize();
-
-        let mut hit_wall = false;
-        let player_size = 10.0;
-        let last_region = &self.regions[self.player.region_index];
-        for wall in last_region.walls.iter() {
-            if wall.hit_by(&self.player.pos, &self.player.direction.scale(player_size)) {
-                if wall.has_next {
-                    self.player.region_index = wall.next_region.unwrap();
-                    let next_region = &self.regions[self.player.region_index];
-
-                    // transform to same position but relative to the new wall, accounting for walls of different sizes.
-                    let last_offset = self.player.pos.subtract(&wall.a);
-                    let fraction = last_offset.length() / wall.direction().length();
-                    let new_wall = &next_region.walls[wall.next_wall.unwrap()];
-                    let new_offset = new_wall.direction().negate().scale(fraction);
-                    self.player.pos = new_wall.a.add(&new_offset);
-                    break
-                }
-
-                hit_wall = true;
-            }
-        }
-
-        if !hit_wall {
-            self.player.pos.x += self.player.direction.x * self.player.speed * delta_time;
-            self.player.pos.y += self.player.direction.y * self.player.speed * delta_time;
-        }
+        self.player.update(&pressed, &self.regions, delta_time);
     }
 
     pub(crate) fn create_example() -> World {
@@ -110,29 +63,25 @@ impl Region {
     fn new_square(x1: f64, y1: f64, x2: f64, y2: f64) -> Region {
         let mut region = Region::new();
         region.walls.push(Wall {
-            a: Vector2::of(x1, y1),
-            b: Vector2::of(x2, y1),
+            line: LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x2, y1)),
             has_next: false,
             next_region: None,
             next_wall: None,
         });
         region.walls.push(Wall {
-            a: Vector2::of(x1, y2),
-            b: Vector2::of(x2, y2),
+            line: LineSegment2::of(Vector2::of(x1, y2), Vector2::of(x2, y2)),
             has_next: false,
             next_region: None,
             next_wall: None,
         });
         region.walls.push(Wall {
-            a: Vector2::of(x1, y1),
-            b: Vector2::of(x1, y2),
+            line: LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2)),
             has_next: false,
             next_region: None,
             next_wall: None,
         });
         region.walls.push(Wall {
-            a: Vector2::of(x2, y1),
-            b: Vector2::of(x2, y2),
+            line: LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2)),
             has_next: false,
             next_region: None,
             next_wall: None,
@@ -142,48 +91,26 @@ impl Region {
     }
 }
 
+#[derive(PartialEq, Debug, Clone)]
 pub(crate) struct Wall {
-    pub(crate) a: Vector2,
-    pub(crate) b: Vector2,
+    pub(crate) line: LineSegment2,
     pub(crate) has_next: bool,
     pub(crate) next_region: Option<usize>,
     pub(crate) next_wall: Option<usize>
 }
 
 impl Wall {
-    fn hit_by(&self, origin: &Vector2, direction: &Vector2) -> bool {
-        let wall_direction = self.b.subtract(&self.a);
-
-        let mut facing = false;
-        let mut dist = -1.0;
-        let mut at_wall = false;
-
-        if wall_direction.x == 0.0 {  // vertical
-            if origin.x > self.a.x {
-                facing = direction.x < 0.0;
-            } else {
-                facing = direction.x > 0.0;
-            }
-
-            dist = (origin.x - self.a.x).abs();
-            at_wall = origin.y > self.a.y.min(self.b.y) && origin.y < self.a.y.max(self.b.y);
-        }
-
-        if wall_direction.y == 0.0 {  // horizontal
-            if origin.y > self.a.y {
-                facing = direction.y < 0.0;
-            } else {
-                facing = direction.y > 0.0;
-            }
-
-            dist = (origin.y - self.a.y).abs();
-            at_wall = origin.x > self.a.x.min(self.b.x) && origin.x < self.a.x.max(self.b.x);
-        }
-
-        facing && at_wall && dist > 0.0 && dist < direction.length()
+    pub(crate) fn hit_by(&self, origin: &Vector2, direction: &Vector2) -> bool {
+        let ray = LineSegment2::from(*origin, *direction);
+        self.line.overlap(&ray)
     }
 
-    fn direction(&self) -> Vector2 {
-        self.a.subtract(&self.b)
+    // transform to same position but relative to the new wall, accounting for walls of different sizes.
+    pub(crate) fn translate(pos: &Vector2, from: &Wall, to: &Wall) -> Vector2 {
+        let last_offset = pos.subtract(&from.line.a);
+        let fraction = last_offset.length() / from.line.direction().length();
+        let new_offset = to.line.direction().negate().scale(fraction);
+
+        to.line.a.add(&new_offset)
     }
 }

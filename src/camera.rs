@@ -1,10 +1,10 @@
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
-use crate::mth::Vector2;
+
 use crate::world::World;
 
-pub(crate) fn render(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
+pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
     let half_player_size = 5;
     let x = world.player.pos.x as i32;
     let y = world.player.pos.y as i32;
@@ -27,7 +27,7 @@ pub(crate) fn render(world: &World, canvas: &mut WindowCanvas, _delta_time: f64)
             }
 
 
-            canvas.draw_line(wall.a.sdl(), wall.b.sdl()).expect("Draw failed");
+            canvas.draw_line(wall.line.a.sdl(), wall.line.b.sdl()).expect("Draw failed");
         }
 
         i += 1;
