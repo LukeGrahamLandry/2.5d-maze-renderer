@@ -12,6 +12,10 @@ pub struct Vector2 {
 
 pub const EPSILON: f64 = 0.000001;
 
+fn almost_equal(a: f64, b: f64) -> bool {
+    (a - b).abs() < EPSILON
+}
+
 impl Vector2 {
     pub(crate) const NAN: Vector2 = Vector2::of(f64::NAN, f64::NAN);
 
@@ -68,7 +72,8 @@ impl Vector2 {
         Vector2::of(x, y)
     }
 
-    pub(crate) fn angle_from_origin(&self) -> f64 {
+    // Get this vector's angle around the unit circle.
+    pub(crate) fn angle(&self) -> f64 {
         let a = self.normalize().dot(&Vector2::of(1.0, 0.0)).acos();
         if self.x >= 0.0 {
             a
@@ -83,7 +88,7 @@ impl Vector2 {
     }
 
     pub fn almost_equal(&self, other: &Vector2) -> bool {
-        return (self.x - other.x).abs() < EPSILON && (self.y - other.y).abs() < EPSILON
+        return almost_equal(self.x,other.x) && almost_equal(self.y, other.y)
     }
 
     pub fn sdl(&self) -> SDL_Point {
@@ -94,7 +99,7 @@ impl Vector2 {
     }
 
     pub(crate) fn is_zero(&self) -> bool {
-        self.length().abs() < EPSILON
+        almost_equal(self.length(), 0.0)
     }
 }
 
@@ -177,27 +182,9 @@ impl LineSegment2 {
         self.a.y - (self.a.x * self.slope())
     }
 
-    pub(crate) fn direction_to(&self, point: &Vector2) -> Vector2 {
-        self.closest_point(point).subtract(point)
-    }
-
     /// Find the closest point on the algebraic line.
     pub(crate) fn closest_point(&self, point: &Vector2) -> Vector2 {
-        if self.is_vertical() {
-            return Vector2::of(self.a.x, point.y);
-        }
-
-        if self.is_horizontal() {
-            return Vector2::of(point.x, self.a.y);
-        }
-
-        let goal_slope = 1.0 / self.slope();
-        let new_line = LineSegment2 {
-            a: self.a.clone(),
-            b: Vector2::of(self.a.x + 1.0, self.a.y + goal_slope),
-        };
-
-        self.algebraic_intersection(&new_line)
+        self.algebraic_intersection(&LineSegment2::from(point.clone(), self.normal()))
     }
 
     /// Returns true if the algebraic lines intersect and that point in the range of both line segments.
@@ -221,6 +208,13 @@ impl LineSegment2 {
         } else {
             Vector2::NAN
         }
+    }
+
+    /// What fraction along the line is the point
+    pub(crate) fn t_of(&self, point: &Vector2) -> f64 {
+        let dir = self.direction();
+        let offset = point.subtract(&self.a);
+        offset.length() / dir.length()
     }
 
     /// The point might not actually be on the line segment, if the infinite algebraic line intersect but are far apart.
@@ -369,19 +363,13 @@ mod tests {
         }
     }
 
-    fn assert_eq_f(a: f64, b: f64){
-        if (a - b).abs() > EPSILON {
-            panic!("{} != {}", a, b);
-        }
-    }
-
     fn assert_linear_system(r1: [f64; 3], r2: [f64; 3], x: f64, y: f64){
         let mut r1_result = r1.clone();
         let mut r2_result = r2.clone();
         reduce(&mut r1_result, &mut r2_result);
 
-        let x_success = (r1_result[2] - x).abs() < EPSILON || (r1_result[2].is_nan() && x.is_nan());
-        let y_success = (r2_result[2] - y).abs() < EPSILON || (r2_result[2].is_nan() && y.is_nan());
+        let x_success = almost_equal(r1_result[2], x) || (r1_result[2].is_nan() && x.is_nan());
+        let y_success = almost_equal(r2_result[2] , y) || (r2_result[2].is_nan() && y.is_nan());
 
         if !x_success || !y_success {
             panic!("\n{:?} -> {:?} \n{:?} -> {:?} \nExpected ({}, {}) but got ({}, {}).", r1, r1_result, r2, r2_result, x, y, r1_result[2], r2_result[2])

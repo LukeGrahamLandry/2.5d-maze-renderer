@@ -1,9 +1,10 @@
 use std::f64::consts::PI;
 use sdl2::keyboard::Scancode::V;
+use sdl2::libc::abs;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::WindowCanvas;
-use crate::mth::{LineSegment2, Vector2};
+use crate::mth::{EPSILON, LineSegment2, Vector2};
 
 use crate::world::{Wall, World};
 
@@ -54,7 +55,8 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     }
 
     // Draw view rays.
-    for delta_deg in -(FOV_DEG / 2)..(FOV_DEG / 2) {
+    for x in 0..(SCREEN_WIDTH as i32) {
+        let delta_deg = ((x as f64 / SCREEN_WIDTH as f64) - 0.5) * FOV_DEG as f64;
         let delta_rad = PI * (delta_deg as f64) / 180.0;
         let look_direction = world.player.look_direction.rotate(delta_rad);
         let mut segments = vec![];
@@ -136,6 +138,7 @@ fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: u
     for wall in &region.walls {
         let hit = wall.line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
+
         if !hit.is_nan() && to_hit.length() < dist {
             dist = to_hit.length();
             first_hit = hit;
@@ -145,18 +148,26 @@ fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: u
     }
 
     if dist.is_infinite() {
+        segments.push(LineSegment2::of(origin, origin.add(&direction.scale(100.0))));
         return None;
     }
 
     let hit_wall = &region.walls[first_hit_index];
+    let t = hit_wall.line.t_of(&first_hit).abs();
     segments.push(LineSegment2::of(origin, first_hit));
 
-    if !hit_wall.has_next {
+
+    if !hit_wall.has_next || t < 0.01 || t > 0.99 {
+        let mut real_distance = 0.0;
+        for &mut segment in segments {
+            real_distance += segment.length();
+        }
+
         return Some(HitResult {
             region_index,
             wall_index: first_hit_index,
             point: first_hit,
-            distance: dist,
+            distance: real_distance,
         });
     }
 
