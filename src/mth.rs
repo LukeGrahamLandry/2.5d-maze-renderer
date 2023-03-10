@@ -135,6 +135,24 @@ impl LineSegment2 {
         self.direction().length()
     }
 
+    pub(crate) fn middle(&self) -> Vector2 {
+        self.a.add(&self.direction().scale(0.5))
+    }
+
+    pub(crate) fn normal(&self) -> Vector2 {
+        if self.is_horizontal() {
+            LineSegment2::vertical(self.a.y).direction().normalize()
+        } else if self.is_vertical() {
+            LineSegment2::horizontal(self.a.x).direction().normalize()
+        } else {
+            let goal_slope = 1.0 / self.slope();
+            LineSegment2 {
+                a: self.a.clone(),
+                b: Vector2::of(self.a.x + 1.0, self.a.y + goal_slope),
+            }.direction().normalize()
+        }
+    }
+
     pub(crate) fn direction(&self) -> Vector2 {
         self.a.subtract(&self.b)
     }

@@ -8,7 +8,7 @@ use sdl2::image::InitFlag;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use crate::mth::reduce;
+use crate::mth::{reduce, Vector2};
 
 use crate::world::World;
 
@@ -22,7 +22,7 @@ pub fn run() -> Result<(), String> {
     let video_subsystem = sdl_context.video()?;
     let _image_context = sdl2::image::init(InitFlag::PNG | InitFlag::JPG)?;
     let window = video_subsystem
-        .window("doom thing", 800, 600)
+        .window("walls", 800, 600)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -73,13 +73,15 @@ pub fn run() -> Result<(), String> {
         let sleep_time = std::time::Duration::from_millis(40);
         thread::sleep(sleep_time);
 
+        let mouse_pos = Vector2::of(events.mouse_state().x() as f64, events.mouse_state().y() as f64);
+
         world.update(duration, &keys);
 
         canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
         canvas.clear();
 
         if first_person_rendering {
-            camera::render3d(&world, &mut canvas, duration);
+            camera::render3d(&world, &mut canvas, duration, &mouse_pos);
         } else {
             camera::render2d(&world, &mut canvas, duration);
         }

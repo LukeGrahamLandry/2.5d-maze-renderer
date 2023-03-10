@@ -6,7 +6,7 @@ use crate::world::{Region, Wall};
 
 pub(crate) struct Player {
     pub(crate) pos: Vector2,
-    pub(crate) direction: Vector2,
+    pub(crate) look_direction: Vector2,
     pub(crate) speed: f64,
     pub(crate) region_index: usize
 }
@@ -19,8 +19,9 @@ impl Player {
             let mut hit_wall = false;
             let player_size = 10.0;
             let last_region = &regions[self.region_index];
+            let move_direction = self.look_direction.scale(player_size * self.speed.signum());
             for wall in last_region.walls.iter() {
-                if wall.hit_by(&self.pos, &self.direction.scale(player_size)) {
+                if wall.hit_by(&self.pos, &move_direction) {
                     if wall.has_next {
                         self.region_index = wall.next_region.unwrap();
                         let next_region = &regions[self.region_index];
@@ -34,8 +35,8 @@ impl Player {
             }
 
             if !hit_wall {
-                self.pos.x += self.direction.x * self.speed * delta_time;
-                self.pos.y += self.direction.y * self.speed * delta_time;
+                self.pos.x += self.look_direction.x * self.speed * delta_time;
+                self.pos.y += self.look_direction.y * self.speed * delta_time;
             }
         }
     }
@@ -51,16 +52,14 @@ impl Player {
                     self.speed -= MOVE_SPEED;
                 }
                 Keycode::A => {
-                    self.direction = self.direction.rotate(-TURN_SPEED);
+                    self.look_direction = self.look_direction.rotate(-TURN_SPEED);
                 }
                 Keycode::D => {
-                    self.direction = self.direction.rotate(TURN_SPEED);
+                    self.look_direction = self.look_direction.rotate(TURN_SPEED);
                 }
                 _ => (),
             }
         }
-
-        println!("{} {}", self.direction, self.direction.angle_from_origin());
 
         self.speed != 0.0
     }
@@ -70,7 +69,7 @@ impl Player {
     pub(crate) fn new() -> Player {
         Player {
             pos: Vector2::zero(),
-            direction: Vector2::of(1.0, 0.0),
+            look_direction: Vector2::of(1.0, 0.0),
             speed: 0.0,
             region_index: 0
         }

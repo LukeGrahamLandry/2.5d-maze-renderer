@@ -7,8 +7,8 @@ use crate::mth::{LineSegment2, Vector2};
 
 use crate::world::World;
 
-const FOV_DEG: i32 = 90;
-const VIEW_DIST: f64 = 200.0;
+const FOV_DEG: i32 = 45;
+const VIEW_DIST: f64 = 300.0;
 const SCREEN_HEIGHT: u32 = 600;
 const SCREEN_WIDTH: u32 = 800;
 const COL_WIDTH: u32 = SCREEN_WIDTH / (FOV_DEG as u32);
@@ -50,7 +50,7 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let delta_rad = PI * (delta_deg as f64) / 180.0;
         let mut dist = f64::INFINITY;
         let mut first_hit = Vector2::NAN;
-        let view_vec = world.player.direction.rotate(delta_rad).scale(VIEW_DIST);
+        let view_vec = world.player.look_direction.rotate(delta_rad).scale(VIEW_DIST);
         let ray = LineSegment2::from(world.player.pos.clone(), view_vec);
         for wall in &region.walls {
             let hit = wall.line.intersection(&ray);
@@ -73,20 +73,21 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
 
     // Draw the player's collision ray.
     canvas.set_draw_color(Color::RGBA(255, 0, 0, 255));
-    let player_view_end = world.player.pos.add(&world.player.direction.scale((half_player_size * 2) as f64));
+    let player_view_end = world.player.pos.add(&world.player.look_direction.scale((half_player_size * 2) as f64));
     canvas.draw_line(world.player.pos.sdl(), player_view_end.sdl()).expect("Draw failed");
 }
 
 
 
-pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
+pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64, mouse_pos: &Vector2){
     let region = &world.regions[world.player.region_index];
     for x in 0..(SCREEN_WIDTH as i32) {
         let delta_deg = ((x as f64 / SCREEN_WIDTH as f64) - 0.5) * FOV_DEG as f64;
         let delta_rad = PI * delta_deg / 180.0;
         let mut dist = f64::INFINITY;
         let mut first_hit = Vector2::NAN;
-        let view_vec = world.player.direction.rotate(delta_rad).scale(VIEW_DIST);
+        let looking_vec = world.player.look_direction.rotate(delta_rad);
+        let view_vec = looking_vec.scale(VIEW_DIST);
         let ray = LineSegment2::from(world.player.pos.clone(), view_vec);
         let mut i = 0;
         let mut first_hit_index = 0;
@@ -101,11 +102,22 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             i += 1;
         }
 
+        let hit_wall = &world.regions[world.player.region_index].walls[first_hit_index];
+        let straight_to_wall = hit_wall.line.direction_to(&world.player.pos);
+        let dist_to_wall = straight_to_wall.length();
+
+        // (dist_to_wall / dist).powi(2)
+        let imaginary_light = world.player.pos.clone(); // hit_wall.line.middle().add(&hit_wall.line.normal());
+        let to_light = imaginary_light.subtract(&first_hit).normalize();
+
+        let color_factor = hit_wall.line.normal().dot(&to_light).abs();
+        let full_color = 20 + (200.0 * color_factor) as u8;
+
         if dist.is_finite() {
-            if world.regions[world.player.region_index].walls[first_hit_index].has_next {
-                canvas.set_draw_color(Color::RGBA(0, 255, 255, 255));
+            if hit_wall.has_next {
+                canvas.set_draw_color(Color::RGBA(0, full_color, full_color, 255));
             } else {
-                canvas.set_draw_color(Color::RGBA(0, 255, 0, 255));
+                canvas.set_draw_color(Color::RGBA(0, full_color, 0, 255));
             }
         } else {
             canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
@@ -113,8 +125,17 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             dist = VIEW_DIST;
         }
 
-        let height = dist * ((PI / 4.0) as f64).tan();
-        println!("{} {}", dist, height);
-        canvas.draw_line(Vector2::of(x as f64, SCREEN_HEIGHT as f64).sdl(), Vector2::of(x as f64, (SCREEN_HEIGHT - height as u32) as f64).sdl()).expect("Draw failed");
+        let s1 = 1.0; //(mouse_pos.x / 800.0) + 0.5;
+        let s2 = 1.5; // (mouse_pos.y / 600.0) + 0.5;
+        // println!("{} {} {}", mouse_pos, s1, s2);
+
+        let yaw: f64 = 1.5 * s1;
+        let ratio = (dist.max(10.0) * yaw.tan() / 200.0);
+        let top = 50.1 / ratio * s2;
+        let bottom = 1000.0 / ratio * s2;
+
+        canvas.draw_line(Vector2::of(x as f64, top).sdl(), Vector2::of(x as f64, bottom).sdl()).expect("Draw failed");
+        canvas.set_draw_color(region.floor_color);
+        canvas.draw_line(Vector2::of(x as f64, bottom).sdl(), Vector2::of(x as f64, SCREEN_HEIGHT as f64).sdl()).expect("Draw failed");
     }
 }

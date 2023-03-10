@@ -1,4 +1,5 @@
 use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
 
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
@@ -26,6 +27,10 @@ impl World {
         world.regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
         world.regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
 
+        world.regions[0].floor_color = Color::RGB(50, 0, 0);
+        world.regions[1].floor_color = Color::RGB(100, 50, 0);
+        world.regions[2].floor_color = Color::RGB(0, 0, 50);
+
         world.regions[0].walls[0].has_next = true;
         world.regions[0].walls[0].next_region = Some(1);
         world.regions[0].walls[0].next_wall = Some(1);
@@ -50,13 +55,15 @@ impl World {
 }
 
 pub(crate) struct Region {
-    pub(crate) walls: Vec<Wall>
+    pub(crate) walls: Vec<Wall>,
+    pub(crate) floor_color: Color,
 }
 
 impl Region {
     fn new() -> Region {
         Region {
-            walls: vec![]
+            walls: vec![],
+            floor_color: Color::RGBA(200, 0, 0, 255)
         }
     }
 
