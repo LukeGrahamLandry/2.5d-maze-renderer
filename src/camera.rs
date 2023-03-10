@@ -9,7 +9,7 @@ use crate::world::World;
 
 const FOV_DEG: i32 = 45;
 const VIEW_DIST: f64 = 300.0;
-const SCREEN_HEIGHT: u32 = 600;
+const SCREEN_HEIGHT: f64 = 600.0;
 const SCREEN_WIDTH: u32 = 800;
 const COL_WIDTH: u32 = SCREEN_WIDTH / (FOV_DEG as u32);
 
@@ -19,14 +19,16 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     let y = world.player.pos.y as i32;
 
     // Draw the player.
-    canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
-    canvas.fill_rect(Rect::new(x - half_player_size, y - half_player_size, (half_player_size * 2) as u32, (half_player_size * 2) as u32)).expect("Draw failed");
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    canvas.fill_rect(Rect::new(x - half_player_size, y - half_player_size, (half_player_size * 2) as u32, (half_player_size * 2) as u32)).unwrap();
 
     // Draw the walls.
     let mut i = 0;
     for region in world.regions.iter() {
         for wall in region.walls.iter() {
             if world.player.region_index == i {
+                canvas.set_draw_color(Color::RGBA(200, 0, 200, 255));
+                canvas.draw_line(wall.line.middle().sdl(), wall.line.middle().add(&wall.line.normal().scale(5.0)).sdl()).unwrap();
                 if wall.has_next {
                     canvas.set_draw_color(Color::RGBA(0, 255, 255, 255));
                 } else {
@@ -38,8 +40,12 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             }
 
 
-            canvas.draw_line(wall.line.a.sdl(), wall.line.b.sdl()).expect("Draw failed");
+            canvas.draw_line(wall.line.a.sdl(), wall.line.b.sdl()).unwrap();
         }
+
+        // Draw light
+        canvas.set_draw_color(Color::RGB(255, 0, 0));
+        canvas.draw_point(region.light_pos.sdl()).unwrap();
 
         i += 1;
     }
@@ -68,16 +74,15 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             first_hit = world.player.pos.add(&view_vec);
         }
 
-        canvas.draw_line(world.player.pos.sdl(), first_hit.sdl()).expect("Draw failed");
+        canvas.draw_line(world.player.pos.sdl(), first_hit.sdl()).unwrap();
     }
 
     // Draw the player's collision ray.
     canvas.set_draw_color(Color::RGBA(255, 0, 0, 255));
-    let player_view_end = world.player.pos.add(&world.player.look_direction.scale((half_player_size * 2) as f64));
-    canvas.draw_line(world.player.pos.sdl(), player_view_end.sdl()).expect("Draw failed");
+    let player_view_end = world.player.pos.add(&world.player.look_direction.scale((half_player_size) as f64));
+    let player_view_back_end = world.player.pos.add(&world.player.look_direction.negate().scale((half_player_size) as f64));
+    canvas.draw_line(player_view_back_end.sdl(), player_view_end.sdl()).unwrap();
 }
-
-
 
 pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64, mouse_pos: &Vector2){
     let region = &world.regions[world.player.region_index];
@@ -102,22 +107,26 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             i += 1;
         }
 
-        let hit_wall = &world.regions[world.player.region_index].walls[first_hit_index];
-        let straight_to_wall = hit_wall.line.direction_to(&world.player.pos);
-        let dist_to_wall = straight_to_wall.length();
+        let hit_wall = &region.walls[first_hit_index];
 
         // (dist_to_wall / dist).powi(2)
-        let imaginary_light = world.player.pos.clone(); // hit_wall.line.middle().add(&hit_wall.line.normal());
-        let to_light = imaginary_light.subtract(&first_hit).normalize();
+        let to_light = region.light_pos.subtract(&first_hit).normalize();
+        let world_light_factor = hit_wall.line.normal().dot(&to_light).abs() * region.light_intensity;
 
-        let color_factor = hit_wall.line.normal().dot(&to_light).abs();
-        let full_color = 20 + (200.0 * color_factor) as u8;
+        let flash_light_factor = if world.player.has_flash_light && (x - SCREEN_WIDTH as i32 / 2).abs() < (SCREEN_WIDTH as i32 / 4){
+            let imaginary_light = world.player.pos.clone();
+            let to_light = imaginary_light.subtract(&first_hit);
+            hit_wall.line.normal().dot(&to_light).abs()
+        } else { 0.0 };
+
+        let total_color_factor = world_light_factor + (flash_light_factor / 200.0);
+        let full_color = (10.0 + (200.0 * total_color_factor)).min(255.0) as u8;
 
         if dist.is_finite() {
             if hit_wall.has_next {
-                canvas.set_draw_color(Color::RGBA(0, full_color, full_color, 255));
+                canvas.set_draw_color(Color::RGBA((10.0 * flash_light_factor) as u8, full_color, full_color, 255));
             } else {
-                canvas.set_draw_color(Color::RGBA(0, full_color, 0, 255));
+                canvas.set_draw_color(Color::RGBA((10.0 * flash_light_factor) as u8, full_color, 0, 255));
             }
         } else {
             canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
@@ -125,17 +134,17 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             dist = VIEW_DIST;
         }
 
-        let s1 = 1.0; //(mouse_pos.x / 800.0) + 0.5;
-        let s2 = 1.5; // (mouse_pos.y / 600.0) + 0.5;
-        // println!("{} {} {}", mouse_pos, s1, s2);
+        let h = SCREEN_HEIGHT / dist * 20.0;
+        let top = ((SCREEN_HEIGHT / 2.0) - (h / 2.0)).max(0.0);
+        let bottom = ((SCREEN_HEIGHT / 2.0) + (h / 2.0)).min(SCREEN_HEIGHT - 1.0);
 
-        let yaw: f64 = 1.5 * s1;
-        let ratio = (dist.max(10.0) * yaw.tan() / 200.0);
-        let top = 50.1 / ratio * s2;
-        let bottom = 1000.0 / ratio * s2;
 
-        canvas.draw_line(Vector2::of(x as f64, top).sdl(), Vector2::of(x as f64, bottom).sdl()).expect("Draw failed");
-        canvas.set_draw_color(region.floor_color);
-        canvas.draw_line(Vector2::of(x as f64, bottom).sdl(), Vector2::of(x as f64, SCREEN_HEIGHT as f64).sdl()).expect("Draw failed");
+        canvas.draw_line(Vector2::of(x as f64, top).sdl(), Vector2::of(x as f64, bottom).sdl()).unwrap();
+        let red = if flash_light_factor > 0.0 { 150 } else { 0 };
+        canvas.set_draw_color(Color::RGB(red, region.floor_color.g, region.floor_color.b));
+        canvas.draw_line(Vector2::of(x as f64, bottom).sdl(), Vector2::of(x as f64, SCREEN_HEIGHT as f64).sdl()).unwrap();
+        canvas.set_draw_color(Color::RGB(red, 0, 0));
+        // canvas.draw_line(Vector2::of(x as f64, 0.0).sdl(), Vector2::of(x as f64, top as f64).sdl()).unwrap();
+
     }
 }

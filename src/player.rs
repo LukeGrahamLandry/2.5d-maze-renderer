@@ -8,7 +8,8 @@ pub(crate) struct Player {
     pub(crate) pos: Vector2,
     pub(crate) look_direction: Vector2,
     pub(crate) speed: f64,
-    pub(crate) region_index: usize
+    pub(crate) region_index: usize,
+    pub(crate) has_flash_light: bool
 }
 
 const MOVE_SPEED: f64 = 200.0;
@@ -16,10 +17,10 @@ const TURN_SPEED: f64 = 0.1;
 impl Player {
     pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Region>, delta_time: f64) {
         if self.update_direction(pressed) {
-            let mut hit_wall = false;
+            let mut can_warp = true;
             let player_size = 10.0;
             let last_region = &regions[self.region_index];
-            let move_direction = self.look_direction.scale(player_size * self.speed.signum());
+            let mut move_direction = self.look_direction.scale(player_size * self.speed.signum());
             for wall in last_region.walls.iter() {
                 if wall.hit_by(&self.pos, &move_direction) {
                     if wall.has_next {
@@ -27,22 +28,20 @@ impl Player {
                         let next_region = &regions[self.region_index];
                         let new_wall = &next_region.walls[wall.next_wall.unwrap()];
                         self.pos = Wall::translate(&self.pos, &wall, &new_wall);
-                        break
+                    } else {
+                        move_direction = wall.line.direction().normalize().scale(move_direction.normalize().dot(&wall.line.direction().normalize())).scale(player_size);
                     }
-
-                    hit_wall = true;
                 }
             }
 
-            if !hit_wall {
-                self.pos.x += self.look_direction.x * self.speed * delta_time;
-                self.pos.y += self.look_direction.y * self.speed * delta_time;
-            }
+            self.pos.x += move_direction.x * delta_time * self.speed.abs() / player_size;
+            self.pos.y += move_direction.y * delta_time * self.speed.abs() / player_size;
         }
     }
 
     fn update_direction(&mut self, pressed: &Vec<Keycode>) -> bool {
         self.speed = 0.0;
+        self.has_flash_light = false;
         for key in pressed {
             match key {
                 Keycode::W => {
@@ -56,6 +55,9 @@ impl Player {
                 }
                 Keycode::D => {
                     self.look_direction = self.look_direction.rotate(TURN_SPEED);
+                },
+                Keycode::F => {
+                    self.has_flash_light = true;
                 }
                 _ => (),
             }
@@ -71,7 +73,8 @@ impl Player {
             pos: Vector2::zero(),
             look_direction: Vector2::of(1.0, 0.0),
             speed: 0.0,
-            region_index: 0
+            region_index: 0,
+            has_flash_light: false
         }
     }
 }

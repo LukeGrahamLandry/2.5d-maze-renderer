@@ -27,9 +27,11 @@ impl World {
         world.regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
         world.regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
 
-        world.regions[0].floor_color = Color::RGB(50, 0, 0);
-        world.regions[1].floor_color = Color::RGB(100, 50, 0);
+        world.regions[0].floor_color = Color::RGB(0, 50, 50);
+        world.regions[1].floor_color = Color::RGB(0, 50, 0);
         world.regions[2].floor_color = Color::RGB(0, 0, 50);
+        world.regions[1].light_intensity = 0.5;
+        world.regions[2].light_intensity = 0.01;
 
         world.regions[0].walls[0].has_next = true;
         world.regions[0].walls[0].next_region = Some(1);
@@ -57,13 +59,17 @@ impl World {
 pub(crate) struct Region {
     pub(crate) walls: Vec<Wall>,
     pub(crate) floor_color: Color,
+    pub(crate) light_pos: Vector2,
+    pub(crate) light_intensity: f64
 }
 
 impl Region {
     fn new() -> Region {
         Region {
             walls: vec![],
-            floor_color: Color::RGBA(200, 0, 0, 255)
+            floor_color: Color::RGBA(0, 0, 0, 255),
+            light_pos: Vector2::zero(),
+            light_intensity: 1.0
         }
     }
 
@@ -93,6 +99,7 @@ impl Region {
             next_region: None,
             next_wall: None,
         });
+        region.light_pos = region.walls[0].line.a.add(&region.walls[0].line.direction().scale(-0.25).add(&region.walls[2].line.direction().scale(-0.25)));
 
         region
     }
