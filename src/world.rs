@@ -30,8 +30,8 @@ impl World {
         world.regions[0].floor_color = Color::RGB(0, 50, 50);
         world.regions[1].floor_color = Color::RGB(0, 50, 0);
         world.regions[2].floor_color = Color::RGB(0, 0, 50);
-        world.regions[1].light_intensity = 0.5;
-        world.regions[2].light_intensity = 0.01;
+        // world.regions[1].light_intensity = 0.5;
+        // world.regions[2].light_intensity = 0.01;
 
         world.regions[0].walls[0].has_next = true;
         world.regions[0].walls[0].next_region = Some(1);

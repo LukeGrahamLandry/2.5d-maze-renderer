@@ -71,7 +71,7 @@ impl Player {
     pub(crate) fn new() -> Player {
         Player {
             pos: Vector2::zero(),
-            look_direction: Vector2::of(1.0, 0.0),
+            look_direction: Vector2::of(0.0, -1.0),
             speed: 0.0,
             region_index: 0,
             has_flash_light: false
