@@ -22,7 +22,7 @@ impl Player {
             let last_region = &regions[self.region_index];
             let mut move_direction = self.look_direction.scale(player_size * self.speed.signum());
             for wall in last_region.walls.iter() {
-                if wall.hit_by(&self.pos, &move_direction) {
+                if wall.hit_by(&self.pos, &move_direction) {  // TODO: use t to not warp at the corners to stop phasing through the wall
                     if wall.has_next {
                         self.region_index = wall.next_region.unwrap();
                         let next_region = &regions[self.region_index];

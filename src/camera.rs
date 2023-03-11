@@ -13,6 +13,7 @@ const VIEW_DIST: f64 = 1000.0;
 const SCREEN_HEIGHT: f64 = 600.0;
 const SCREEN_WIDTH: u32 = 800;
 const COL_WIDTH: u32 = SCREEN_WIDTH / (FOV_DEG as u32);
+const MAGIC: f64 = 20.0;
 
 pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
     let half_player_size = 5;
@@ -60,19 +61,17 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let delta_rad = PI * (delta_deg as f64) / 180.0;
         let look_direction = world.player.look_direction.rotate(delta_rad);
         let mut segments = vec![];
-        let hit = ray_trace(&world, world.player.pos, look_direction, world.player.region_index, &mut segments);
+        ray_trace(&world, world.player.pos, look_direction, world.player.region_index, &mut segments);
 
-        match hit {
-            None => {
-                canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
-            }
-            Some(hit) => {
-                canvas.set_draw_color(Color::RGBA(150, 150, 0, 255));
-            }
-        }
 
         for segment in &segments {
-            canvas.draw_line(segment.a.sdl(), segment.b.sdl()).unwrap();
+            if segment.has_hit {
+                canvas.set_draw_color(Color::RGBA(150, 150, 0, 255));
+                canvas.draw_line(segment.line.a.sdl(), segment.line.b.sdl()).unwrap();
+            } else {
+                canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
+                canvas.draw_line(segment.line.a.sdl(), segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)).sdl()).unwrap();
+            }
         }
     }
 
@@ -89,45 +88,72 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let delta_rad = PI * delta_deg / 180.0;
         let look_direction = world.player.look_direction.rotate(delta_rad);
         let mut segments = vec![];
-        let hit = ray_trace(&world, world.player.pos, look_direction, world.player.region_index, &mut segments);
+        ray_trace(&world, world.player.pos, look_direction, world.player.region_index, &mut segments);
 
-        match hit {
-            None => {
-                canvas.set_draw_color(Color::RGB(100, 100, 100));
-                canvas.draw_line(Vector2::of(x as f64, 0.0).sdl(), Vector2::of(x as f64, SCREEN_HEIGHT).sdl()).unwrap();
-            }
-            Some(hit) => {
-                let region = &world.regions[hit.region_index];
-                let hit_wall = &region.walls[hit.wall_index];
 
-                let to_light = region.light_pos.subtract(&hit.point).normalize();
-                let world_light_factor = hit_wall.line.normal().dot(&to_light).abs() * region.light_intensity;
+        let mut cumulative_dist = 0.0;
+        let mut pixels_drawn = 0.0;
+        for segment in &segments {
+            let region = &world.regions[segment.region_index];
 
-                let flash_light_factor = if world.player.has_flash_light && (x - SCREEN_WIDTH as i32 / 2).abs() < (SCREEN_WIDTH as i32 / 4){
-                    let imaginary_light = world.player.pos.clone();
-                    let to_light = imaginary_light.subtract(&hit.point);
-                    hit_wall.line.normal().dot(&to_light).abs()
-                } else { 0.0 };
 
-                let total_color_factor = world_light_factor + (flash_light_factor / 200.0);
-                let full_color = (10.0 + (200.0 * total_color_factor)).min(255.0) as u8;
+            let h = SCREEN_HEIGHT / (cumulative_dist + segment.line.length()) * MAGIC;
+            let top = ((SCREEN_HEIGHT / 2.0) - (h / 2.0)).max(0.0);
+            let bottom = ((SCREEN_HEIGHT / 2.0) + (h / 2.0)).min(SCREEN_HEIGHT - 1.0);
 
-                canvas.set_draw_color(Color::RGB((10.0 * flash_light_factor) as u8, full_color, 0));
+            let top = bottom;
+            let bottom = SCREEN_HEIGHT - pixels_drawn;
 
-                let h = SCREEN_HEIGHT / hit.distance * 20.0;
-                let top = ((SCREEN_HEIGHT / 2.0) - (h / 2.0)).max(0.0);
-                let bottom = ((SCREEN_HEIGHT / 2.0) + (h / 2.0)).min(SCREEN_HEIGHT - 1.0);
+            canvas.set_draw_color(region.floor_color);
+            canvas.draw_line(Vector2::of(x as f64, bottom).sdl(), Vector2::of(x as f64, top).sdl()).unwrap();
 
-                canvas.draw_line(Vector2::of(x as f64, top).sdl(), Vector2::of(x as f64, bottom).sdl()).unwrap();
+            pixels_drawn += bottom - top;
+            cumulative_dist += segment.line.length();
 
-                canvas.set_draw_color(region.floor_color);
-                canvas.draw_line(Vector2::of(x as f64, bottom).sdl(), Vector2::of(x as f64, SCREEN_HEIGHT).sdl()).unwrap();
+            match segment.hit_wall_index {
+                None => {}
+                Some(hit_wall_index) => {
+                    let hit_wall = &region.walls[hit_wall_index];
+                }
             }
         }
+
+        let hit = segments.last().expect("Ray trace segments list must not be empty.");
+
+        let region = &world.regions[hit.region_index];
+
+        let wall_normal = if hit.has_hit {
+            region.walls[hit.hit_wall_index.unwrap()].line.normal()
+        } else {
+            look_direction
+        };
+
+        let hit_point = hit.line.b;
+
+
+        let to_light = region.light_pos.subtract(&hit_point).normalize();
+        let world_light_factor = wall_normal.dot(&to_light).abs() * region.light_intensity;
+
+        let flash_light_factor = if world.player.has_flash_light && (x - SCREEN_WIDTH as i32 / 2).abs() < (SCREEN_WIDTH as i32 / 4){
+            let imaginary_light = world.player.pos.clone();
+            let to_light = imaginary_light.subtract(&hit_point);
+            wall_normal.dot(&to_light).abs()
+        } else { 0.0 };
+
+        let total_color_factor = world_light_factor + (flash_light_factor / 200.0);
+        let full_color = (10.0 + (200.0 * total_color_factor)).min(255.0) as u8;
+
+        let h = SCREEN_HEIGHT / cumulative_dist * MAGIC;
+        let top = ((SCREEN_HEIGHT / 2.0) - (h / 2.0)).max(0.0);
+        let bottom = ((SCREEN_HEIGHT / 2.0) + (h / 2.0)).min(SCREEN_HEIGHT - 1.0);
+
+        canvas.set_draw_color(Color::RGB((10.0 * flash_light_factor) as u8, full_color, 0));
+
+        canvas.draw_line(Vector2::of(x as f64, top).sdl(), Vector2::of(x as f64, bottom).sdl()).unwrap();
     }
 }
 
-fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: usize, segments: &mut Vec<LineSegment2>) -> Option<HitResult> {
+fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: usize, segments: &mut Vec<HitResult>) {
     let region = &world.regions[region_index];
 
     let mut dist = f64::INFINITY;
@@ -148,31 +174,27 @@ fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: u
     }
 
     if dist.is_infinite() {
-        segments.push(LineSegment2::of(origin, origin.add(&direction.scale(100.0))));
-        return None;
+        segments.push(HitResult {
+            has_hit: false,
+            region_index,
+            hit_wall_index: None,
+            line: LineSegment2::of(origin, origin.add(&direction.scale(9999999.0)))
+        });
+        return;
     }
 
     let hit_wall = &region.walls[first_hit_index];
     let t = hit_wall.line.t_of(&first_hit).abs();
-    segments.push(LineSegment2::of(origin, first_hit));
 
+    segments.push(HitResult {
+        has_hit: true,
+        region_index,
+        hit_wall_index: Some(first_hit_index),
+        line: LineSegment2::of(origin, first_hit)
+    });
 
-    if !hit_wall.has_next || t < 0.01 || t > 0.99 {
-        let mut real_distance = 0.0;
-        for &mut segment in segments {
-            real_distance += segment.length();
-        }
-
-        return Some(HitResult {
-            region_index,
-            wall_index: first_hit_index,
-            point: first_hit,
-            distance: real_distance,
-        });
-    }
-
-    if segments.len() >= 5 {
-        return None;
+    if !hit_wall.has_next || t < 0.01 || t > 0.99 || segments.len() >= 5 {
+        return;
     }
 
     let new_region_index = hit_wall.next_region.unwrap();
@@ -183,8 +205,8 @@ fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: u
 }
 
 struct HitResult {
+    has_hit: bool,
     region_index: usize,
-    wall_index: usize,
-    point: Vector2,
-    distance: f64
+    hit_wall_index: Option<usize>,
+    line: LineSegment2
 }

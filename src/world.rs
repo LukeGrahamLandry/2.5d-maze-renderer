@@ -33,6 +33,13 @@ impl World {
         // world.regions[1].light_intensity = 0.5;
         // world.regions[2].light_intensity = 0.01;
 
+        world.regions[0].walls.push(Wall {
+            line: LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0)),
+            has_next: false,
+            next_region: None,
+            next_wall: None
+        });
+
         world.regions[0].walls[0].has_next = true;
         world.regions[0].walls[0].next_region = Some(1);
         world.regions[0].walls[0].next_wall = Some(1);
