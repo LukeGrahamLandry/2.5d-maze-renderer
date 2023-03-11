@@ -67,7 +67,7 @@ fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: boo
 
     // Draw normal
     canvas.set_draw_color(Color::RGBA(200, 0, 200, 255));
-    canvas.draw_line(wall.line.middle().sdl(), wall.line.middle().add(&wall.line.normal().scale(5.0)).sdl()).unwrap();
+    canvas.draw_line(wall.line.middle().sdl(), wall.line.middle().add(&wall.normal.scale(5.0)).sdl()).unwrap();
 }
 
 fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
@@ -88,7 +88,7 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let mut cumulative_dist = 0.0;
         for segment in &segments {
             let region = &world.regions[segment.region_index];
-            draw_floor_segment(canvas, region, &segment.line, x, cumulative_dist);
+            draw_floor_segment(canvas, region, segment.line.length(), x, cumulative_dist);
             cumulative_dist += segment.line.length();
         }
 
@@ -96,13 +96,13 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     }
 }
 
-fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, line: &LineSegment2, screen_x: i32, cumulative_dist: f64){
+fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, length: f64, screen_x: i32, cumulative_dist: f64){
     // The top of the last floor segment is the bottom of this one.
     let (pixels_drawn, _) = project_to_screen(cumulative_dist);
     let bottom = SCREEN_HEIGHT - pixels_drawn;
 
     // The top of the floor segment is the bottom of where we'd draw if it was a wall.
-    let (_, top) = project_to_screen(cumulative_dist + line.length());
+    let (_, top) = project_to_screen(cumulative_dist + length);
 
     canvas.set_draw_color(region.floor_color);
     canvas.draw_line(Vector2::of(screen_x as f64, bottom).sdl(), Vector2::of(screen_x as f64, top).sdl()).unwrap();
@@ -119,6 +119,7 @@ fn draw_wall_3d(world: &World, canvas: &mut WindowCanvas, hit: &HitResult, playe
 
     let (red, green, blue) = wall_column_lighting(region, &hit_point, &wall_normal, &world.player, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
+
     canvas.set_draw_color(Color::RGB(red, green, blue));
     canvas.draw_line(Vector2::of(screen_x as f64, top).sdl(), Vector2::of(screen_x as f64, bottom).sdl()).unwrap();
 }
@@ -161,7 +162,7 @@ fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
 }
 
 /// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: usize) -> Vec<HitResult> {
+fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region_index: usize) -> Vec<HitResult> {
     let mut segments = vec![];
 
     let mut segment = single_ray_trace(world, origin, direction, region_index);
@@ -172,18 +173,22 @@ fn ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: u
 
         let hit_wall = &world.regions[segment.region_index].walls[segment.hit_wall_index.unwrap()];
         let t = hit_wall.line.t_of(&segment.line.b).abs();
+        let hit_back = hit_wall.normal.dot(&direction) > 0.0;
+        let hit_edge = t < 0.01 || t > 0.99;
 
-        if !hit_wall.has_next || t < 0.01 || t > 0.99 {
+        if !hit_wall.has_next || hit_back || hit_edge {
             break;
         }
 
+        // Go through the portal
         let new_region_index = hit_wall.next_region.unwrap();
         let new_wall_index = hit_wall.next_wall.unwrap();
         let new_wall = &world.regions[new_region_index].walls[new_wall_index];
-        let new_origin = Wall::translate(&segment.line.b, hit_wall, new_wall);
+        origin = Wall::translate(segment.line.b, hit_wall, new_wall);
+        direction = Wall::rotate(direction, hit_wall, new_wall);
 
         segments.push(segment);
-        segment = single_ray_trace(world, new_origin.add(&direction), direction, new_region_index);
+        segment = single_ray_trace(world, origin.add(&direction), direction, new_region_index);
     }
 
     segments.push(segment);
@@ -217,7 +222,7 @@ fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region_i
             has_hit: false,
             region_index,
             hit_wall_index: None,
-            line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST)))
+            line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
         }
     } else {
         HitResult {

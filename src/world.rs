@@ -33,11 +33,22 @@ impl World {
         // world.regions[1].light_intensity = 0.5;
         // world.regions[2].light_intensity = 0.01;
 
+        let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
         world.regions[0].walls.push(Wall {
-            line: LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0)),
+            normal: line.normal(),
+            line,
             has_next: true,
             next_region: Some(2),
             next_wall: Some(1)
+        });
+
+        let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
+        world.regions[0].walls.push(Wall {
+            normal: line.normal().negate(),
+            line,
+            has_next: true,
+            next_region: Some(2),
+            next_wall: Some(0)
         });
 
         world.regions[0].walls[0].has_next = true;
@@ -82,30 +93,50 @@ impl Region {
 
     fn new_square(x1: f64, y1: f64, x2: f64, y2: f64) -> Region {
         let mut region = Region::new();
+
+        let (x1, x2) = (x1.max(x2), x1.min(x2));
+        let (y1, y2) = (y1.min(y2), y1.max(y2));
+
+        // Top
+        let line = LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x2, y1));
         region.walls.push(Wall {
-            line: LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x2, y1)),
+            normal: line.normal(),
+            line,
+            has_next: false,
+            next_region: None,
+            next_wall: None
+        });
+
+        // Bottom
+        let line = LineSegment2::of(Vector2::of(x1, y2), Vector2::of(x2, y2));
+        region.walls.push(Wall {
+            normal: line.normal().negate(),
+            line,
             has_next: false,
             next_region: None,
             next_wall: None,
         });
+
+        // Left
+        let line = LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2));
         region.walls.push(Wall {
-            line: LineSegment2::of(Vector2::of(x1, y2), Vector2::of(x2, y2)),
+            normal: line.normal(),
+            line,
             has_next: false,
             next_region: None,
             next_wall: None,
         });
+
+        // Right
+        let line = LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2));
         region.walls.push(Wall {
-            line: LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2)),
+            normal: line.normal().negate(),
+            line,
             has_next: false,
             next_region: None,
             next_wall: None,
         });
-        region.walls.push(Wall {
-            line: LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2)),
-            has_next: false,
-            next_region: None,
-            next_wall: None,
-        });
+
         region.light_pos = region.walls[0].line.a.add(&region.walls[0].line.direction().scale(-0.25).add(&region.walls[2].line.direction().scale(-0.25)));
 
         region
@@ -117,21 +148,26 @@ pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
     pub(crate) has_next: bool,
     pub(crate) next_region: Option<usize>,
-    pub(crate) next_wall: Option<usize>
+    pub(crate) next_wall: Option<usize>,
+    pub(crate) normal: Vector2
 }
 
 impl Wall {
-    pub(crate) fn hit_by(&self, origin: &Vector2, direction: &Vector2) -> bool {
-        let ray = LineSegment2::from(*origin, *direction);
-        self.line.overlaps(&ray)
+    pub(crate) fn scale_factor(from: &Wall, to: &Wall) -> f64 {
+        to.line.length() / from.line.length()
     }
 
     // transform to same position but relative to the new wall, accounting for walls of different sizes.
-    pub(crate) fn translate(pos: &Vector2, from: &Wall, to: &Wall) -> Vector2 {
+    pub(crate) fn translate(pos: Vector2, from: &Wall, to: &Wall) -> Vector2 {
         let last_offset = pos.subtract(&from.line.a);
         let fraction = last_offset.length() / from.line.direction().length();
         let new_offset = to.line.direction().negate().scale(fraction);
 
         to.line.a.add(&new_offset)
+    }
+
+    pub(crate) fn rotate(direction: Vector2, from: &Wall, to: &Wall) -> Vector2 {
+        let delta_rad = to.line.normal().angle() - from.line.normal().angle();
+        direction.rotate(delta_rad)
     }
 }

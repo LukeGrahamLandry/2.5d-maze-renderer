@@ -60,8 +60,8 @@ impl Vector2 {
         Vector2::of(0.0, 0.0).subtract(self)
     }
 
-    pub(crate) fn from_angle(radians_from_origin: f64, length: f64) -> Vector2 {
-        Vector2::of(radians_from_origin.cos() * length, radians_from_origin.sin() * length)
+    pub(crate) fn from_angle(radians_around_unit_circle: f64, length: f64) -> Vector2 {
+        Vector2::of(radians_around_unit_circle.cos() * length, radians_around_unit_circle.sin() * length)
     }
 
     pub(crate) fn rotate(&self, delta_radians: f64) -> Vector2 {
@@ -70,6 +70,10 @@ impl Vector2 {
         let x = b.cos() * self.x - b.sin() * self.y;
         let y = b.sin() * self.x + b.cos() * self.y;
         Vector2::of(x, y)
+    }
+
+    pub(crate) fn rotate_basis(&self, new_forward_basis: Vector2) -> Vector2 {
+        self.rotate(new_forward_basis.angle())
     }
 
     // Get this vector's angle around the unit circle.
@@ -329,26 +333,37 @@ mod tests {
 
     #[test]
     fn vector_angles() {
-        let angles = [
-            (Vector2::of(1.0, 0.0), 0.0),
-            (Vector2::of(0.0, 1.0), PI / 2.0),
-            (Vector2::of(-1.0, 0.0), PI),
-            (Vector2::of(0.0, -1.0), 3.0 * PI / 2.0),
-            (Vector2::of(1.0, 0.0), 2.0 * PI),
+        let right = Vector2::of(1.0, 0.0);
+        let up = Vector2::of(0.0, 1.0);
+        let left = Vector2::of(-1.0, 0.0);
+        let down = Vector2::of(0.0, -1.0);
+
+        let vec_and_angle = [
+            (right, 0.0),
+            (up, PI / 2.0),
+            (left, PI),
+            (down, 3.0 * PI / 2.0),
+            (right, 2.0 * PI),
         ];
 
-        let mut start = angles[0].0.clone();
-        for check in angles {
-            let direction = Vector2::from_angle(check.1, 1.0);
-            if !check.0.almost_equal(&direction) {
-                panic!("[{} rad] Expected {} but got {}", check.1, check.0, direction);
+        let mut rotating_with_angle = right;
+        let mut rotating_with_vec = right;
+        for (i, (vec, angle)) in vec_and_angle.iter().enumerate() {
+            let direction = Vector2::from_angle(*angle, 1.0);
+            if !vec.almost_equal(&direction) {
+                panic!("[{}] Expected {} but got {}.", i, vec, direction);
             }
 
-            if !check.0.almost_equal(&start){
-                panic!("[{} rad] Expected {} but got {}", check.1, check.0, start);
+            if !vec.almost_equal(&rotating_with_angle){
+                panic!("[{}] Expected {} but got {}.", i, vec, rotating_with_angle);
             }
 
-            start = start.rotate(PI / 2.0);
+            if !vec.almost_equal(&rotating_with_vec){
+                panic!("[{}] Expected {} but got {}.", i, vec, rotating_with_vec);
+            }
+
+            rotating_with_angle = rotating_with_angle.rotate(PI / 2.0);
+            rotating_with_vec = rotating_with_vec.rotate_basis(up);
         }
     }
 

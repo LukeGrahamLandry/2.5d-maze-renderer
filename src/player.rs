@@ -1,6 +1,6 @@
 use sdl2::keyboard::Keycode;
 
-use crate::mth::Vector2;
+use crate::mth::{LineSegment2, Vector2};
 use crate::world::{Region, Wall};
 
 pub(crate) struct Player {
@@ -16,25 +16,50 @@ const TURN_SPEED: f64 = 0.1;
 impl Player {
     pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Region>, delta_time: f64) {
         if self.update_direction(pressed) {
-            let player_size = 10.0;
-            let last_region = &regions[self.region_index];
-            let mut move_direction = self.look_direction.scale(player_size * self.speed.signum());
-            for wall in last_region.walls.iter() {
-                if wall.hit_by(&self.pos, &move_direction) {  // TODO: use t to not warp at the corners to stop phasing through the wall
-                    if wall.has_next {
-                        self.region_index = wall.next_region.unwrap();
-                        let next_region = &regions[self.region_index];
-                        let new_wall = &next_region.walls[wall.next_wall.unwrap()];
-                        self.pos = Wall::translate(&self.pos, &wall, &new_wall);
-                    } else {
-                        move_direction = wall.line.direction().normalize().scale(move_direction.normalize().dot(&wall.line.direction().normalize())).scale(player_size);
-                    }
+            let move_direction = self.look_direction.scale(self.speed.signum());
+            let move_direction = self.handle_collisions(regions, move_direction);
+
+            self.pos.x += move_direction.x * delta_time * self.speed.abs();
+            self.pos.y += move_direction.y * delta_time * self.speed.abs();
+        }
+    }
+
+    pub(crate) fn handle_collisions(&mut self, regions: &Vec<Region>, mut move_direction: Vector2) -> Vector2 {
+        let player_size = 10.0;
+        let last_region = &regions[self.region_index];
+        for wall in last_region.walls.iter() {
+            let ray = LineSegment2::from(self.pos, move_direction.scale(player_size));
+            let hit_pos = wall.line.intersection(&ray);
+            let t = wall.line.t_of(&hit_pos).abs();
+            let hit_edge = t < 0.01 || t > 0.99;
+
+            if !hit_pos.is_nan() {
+                if hit_edge {
+                    return Vector2::zero();
+                }
+
+                let hit_back = wall.normal.dot(&move_direction) > 0.0;
+                if wall.has_next && !hit_back {
+                    self.region_index = wall.next_region.unwrap();
+                    let next_region = &regions[self.region_index];
+                    let new_wall = &next_region.walls[wall.next_wall.unwrap()];
+                    self.pos = Wall::translate(self.pos, &wall, &new_wall);
+                    self.look_direction = Wall::rotate(self.look_direction, &wall, &new_wall);
+                    move_direction = Wall::rotate(move_direction, &wall, &new_wall);
+                    self.pos = self.pos.add(&move_direction);
+                } else {
+                    move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
+                }
+
+                if move_direction.length() > 0.1 {
+                    return self.handle_collisions(regions, move_direction);
+                } else {
+                    break;
                 }
             }
-
-            self.pos.x += move_direction.x * delta_time * self.speed.abs() / player_size;
-            self.pos.y += move_direction.y * delta_time * self.speed.abs() / player_size;
         }
+
+        move_direction
     }
 
     fn update_direction(&mut self, pressed: &Vec<Keycode>) -> bool {
