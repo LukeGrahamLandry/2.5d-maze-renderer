@@ -35,9 +35,9 @@ impl World {
 
         world.regions[0].walls.push(Wall {
             line: LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0)),
-            has_next: false,
-            next_region: None,
-            next_wall: None
+            has_next: true,
+            next_region: Some(2),
+            next_wall: Some(1)
         });
 
         world.regions[0].walls[0].has_next = true;

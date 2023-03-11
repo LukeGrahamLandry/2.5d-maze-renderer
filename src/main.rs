@@ -8,7 +8,7 @@ use sdl2::image::InitFlag;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use crate::mth::{reduce, Vector2};
+use crate::mth::Vector2;
 
 use crate::world::World;
 

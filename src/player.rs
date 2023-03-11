@@ -1,7 +1,6 @@
-use std::f64::consts::PI;
 use sdl2::keyboard::Keycode;
 
-use crate::mth::{LineSegment2, Vector2};
+use crate::mth::Vector2;
 use crate::world::{Region, Wall};
 
 pub(crate) struct Player {
@@ -17,7 +16,6 @@ const TURN_SPEED: f64 = 0.1;
 impl Player {
     pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Region>, delta_time: f64) {
         if self.update_direction(pressed) {
-            let mut can_warp = true;
             let player_size = 10.0;
             let last_region = &regions[self.region_index];
             let mut move_direction = self.look_direction.scale(player_size * self.speed.signum());
