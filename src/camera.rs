@@ -25,13 +25,13 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     // Draw the regions.
     let mut i = 0;
     for region in world.regions.iter() {
-        for wall in region.walls.iter() {
+        for wall in region.borrow().walls.iter() {
             draw_wall_2d(canvas, wall, world.player.region_index == i);
         }
 
         // Draw light
         canvas.set_draw_color(Color::RGB(255, 0, 0));
-        canvas.draw_point(region.light_pos.sdl()).unwrap();
+        canvas.draw_point(region.borrow().light_pos.sdl()).unwrap();
 
         i += 1;
     }
@@ -88,7 +88,7 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let mut cumulative_dist = 0.0;
         for segment in &segments {
             let region = &world.regions[segment.region_index];
-            draw_floor_segment(canvas, region, segment.line.length(), x, cumulative_dist);
+            draw_floor_segment(canvas, &region.borrow(), segment.line.length(), x, cumulative_dist);
             cumulative_dist += segment.line.length();
         }
 
@@ -112,12 +112,12 @@ fn draw_wall_3d(world: &World, canvas: &mut WindowCanvas, hit: &HitResult, playe
     let region = &world.regions[hit.region_index];
     let hit_point = hit.line.b;
     let wall_normal = if hit.has_hit {
-        region.walls[hit.hit_wall_index.unwrap()].line.normal()
+        region.borrow().walls[hit.hit_wall_index.unwrap()].line.normal()
     } else {
         player_look_direction
     };
 
-    let (red, green, blue) = wall_column_lighting(region, &hit_point, &wall_normal, &world.player, screen_x);
+    let (red, green, blue) = wall_column_lighting(&region.borrow(), &hit_point, &wall_normal, &world.player, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
     canvas.set_draw_color(Color::RGB(red, green, blue));
@@ -171,7 +171,7 @@ fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region_
             break;
         }
 
-        let hit_wall = &world.regions[segment.region_index].walls[segment.hit_wall_index.unwrap()];
+        let hit_wall = &world.regions[segment.region_index].borrow().walls[segment.hit_wall_index.unwrap()];
         let t = hit_wall.line.t_of(&segment.line.b).abs();
         let hit_back = hit_wall.normal.dot(&direction) > 0.0;
         let hit_edge = t < 0.01 || t > 0.99;
@@ -183,7 +183,7 @@ fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region_
         // Go through the portal
         let new_region_index = hit_wall.next_region.unwrap();
         let new_wall_index = hit_wall.next_wall.unwrap();
-        let new_wall = &world.regions[new_region_index].walls[new_wall_index];
+        let new_wall = &world.regions[new_region_index].borrow().walls[new_wall_index];
         origin = Wall::translate(segment.line.b, hit_wall, new_wall);
         direction = Wall::rotate(direction, hit_wall, new_wall);
 
@@ -205,7 +205,7 @@ fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region_i
     let mut hit_wall_index = 0;
     let mut current_wall_index = 0;
 
-    for wall in &region.walls {
+    for wall in &region.borrow().walls {
         let hit = wall.line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
 
