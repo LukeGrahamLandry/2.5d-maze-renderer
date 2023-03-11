@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::f64::consts::PI;
+use std::rc::{Rc, Weak};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, WindowCanvas};
@@ -26,7 +28,8 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     let mut i = 0;
     for region in world.regions.iter() {
         for wall in region.borrow().walls.iter() {
-            draw_wall_2d(canvas, wall, world.player.region_index == i);
+            let contains_player = world.player.region.ptr_eq(&Rc::downgrade(region));
+            draw_wall_2d(canvas, &wall.borrow(), contains_player);
         }
 
         // Draw light
@@ -39,7 +42,7 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     // Draw view rays.
     for x in 0..(SCREEN_WIDTH as i32) {
         let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(&world, world.player.pos, look_direction, world.player.region_index);
+        let segments = ray_trace(&world, world.player.pos, look_direction, &world.player.region);
 
         for segment in &segments {
             draw_ray_segment_2d(canvas, segment);
@@ -49,13 +52,13 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
 
 fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: bool) {
     let color = if contains_the_player {
-        if wall.has_next {
+        if wall.is_portal() {
             Color::RGB(0, 255, 255)
         } else {
             Color::RGB(0, 255, 0)
         }
     } else {
-        if wall.has_next {
+        if wall.is_portal() {
             Color::RGB(0, 155, 15)
         } else {
             Color::RGB(0, 0, 255)
@@ -83,12 +86,11 @@ fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
 pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64, mouse_pos: &Vector2){
     for x in 0..(SCREEN_WIDTH as i32) {
         let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(&world, world.player.pos, look_direction, world.player.region_index);
+        let segments = ray_trace(&world, world.player.pos, look_direction, &world.player.region);
 
         let mut cumulative_dist = 0.0;
         for segment in &segments {
-            let region = &world.regions[segment.region_index];
-            draw_floor_segment(canvas, &region.borrow(), segment.line.length(), x, cumulative_dist);
+            draw_floor_segment(canvas, &segment.region.upgrade().unwrap().borrow(), segment.line.length(), x, cumulative_dist);
             cumulative_dist += segment.line.length();
         }
 
@@ -109,15 +111,15 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, length: f64, s
 }
 
 fn draw_wall_3d(world: &World, canvas: &mut WindowCanvas, hit: &HitResult, player_look_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
-    let region = &world.regions[hit.region_index];
     let hit_point = hit.line.b;
-    let wall_normal = if hit.has_hit {
-        region.borrow().walls[hit.hit_wall_index.unwrap()].line.normal()
-    } else {
-        player_look_direction
+    let wall_normal = match &hit.hit_wall {
+        None => { player_look_direction }
+        Some(hit_wall) => {
+            hit_wall.upgrade().unwrap().borrow().normal
+        }
     };
 
-    let (red, green, blue) = wall_column_lighting(&region.borrow(), &hit_point, &wall_normal, &world.player, screen_x);
+    let (red, green, blue) = wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &world.player, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
     canvas.set_draw_color(Color::RGB(red, green, blue));
@@ -162,33 +164,39 @@ fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
 }
 
 /// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region_index: usize) -> Vec<HitResult> {
+fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region: &Weak<RefCell<Region>>) -> Vec<HitResult> {
     let mut segments = vec![];
 
-    let mut segment = single_ray_trace(world, origin, direction, region_index);
+    let mut segment = single_ray_trace(world, origin, direction, region);
     for _ in 0..PORTAL_LIMIT {
-        if !segment.has_hit {
-            break;
+        match &segment.hit_wall {
+            None => { break; }
+            Some(hit_wall) => {
+                let wall = hit_wall.upgrade().unwrap();
+                let wall = wall.borrow();
+
+                match &wall.next_wall {
+                    None => { break; }
+                    Some(new_wall) => {
+                        let t = wall.line.t_of(&segment.line.b).abs();
+                        let hit_back = wall.normal.dot(&direction) > 0.0;
+                        let hit_edge = t < 0.01 || t > 0.99;
+                        if hit_back || hit_edge {
+                            break;
+                        }
+
+                        // Go through the portal
+                        let new_wall = new_wall.upgrade().unwrap();
+                        let new_wall = new_wall.borrow();
+                        origin = Wall::translate(segment.line.b, &wall, &new_wall);
+                        direction = Wall::rotate(direction, &wall, &new_wall);
+
+                        segments.push(segment);
+                        segment = single_ray_trace(world, origin.add(&direction), direction, &new_wall.region);
+                    }
+                }
+            }
         }
-
-        let hit_wall = &world.regions[segment.region_index].borrow().walls[segment.hit_wall_index.unwrap()];
-        let t = hit_wall.line.t_of(&segment.line.b).abs();
-        let hit_back = hit_wall.normal.dot(&direction) > 0.0;
-        let hit_edge = t < 0.01 || t > 0.99;
-
-        if !hit_wall.has_next || hit_back || hit_edge {
-            break;
-        }
-
-        // Go through the portal
-        let new_region_index = hit_wall.next_region.unwrap();
-        let new_wall_index = hit_wall.next_wall.unwrap();
-        let new_wall = &world.regions[new_region_index].borrow().walls[new_wall_index];
-        origin = Wall::translate(segment.line.b, hit_wall, new_wall);
-        direction = Wall::rotate(direction, hit_wall, new_wall);
-
-        segments.push(segment);
-        segment = single_ray_trace(world, origin.add(&direction), direction, new_region_index);
     }
 
     segments.push(segment);
@@ -196,47 +204,49 @@ fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region_
 }
 
 /// Sends a ray through a single region until it hits a wall.
-fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region_index: usize) -> HitResult {
-    let region = &world.regions[region_index];
+fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region: &Weak<RefCell<Region>>) -> HitResult {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
     let mut shortest_hit_distance = f64::INFINITY;
     let mut closest_hit_point = Vector2::NAN;
-    let mut hit_wall_index = 0;
-    let mut current_wall_index = 0;
+    let mut hit_wall = None;
 
-    for wall in &region.borrow().walls {
-        let hit = wall.line.intersection(&ray);
+    let r = &region.upgrade().unwrap();
+    let r = r.borrow();
+    for wall in &r.walls {
+        let hit = wall.borrow().line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
 
         if !hit.is_nan() && to_hit.length() < shortest_hit_distance {
+            hit_wall = Some(wall);
             shortest_hit_distance = to_hit.length();
             closest_hit_point = hit;
-            hit_wall_index = current_wall_index;
         }
-        current_wall_index += 1;
     }
 
-    if shortest_hit_distance.is_infinite() {
-        HitResult {
-            has_hit: false,
-            region_index,
-            hit_wall_index: None,
-            line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
+    match hit_wall {
+        None => {
+            HitResult {
+                has_hit: false,
+                region: region.clone(),
+                hit_wall: None,
+                line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
+            }
         }
-    } else {
-        HitResult {
-            has_hit: true,
-            region_index,
-            hit_wall_index: Some(hit_wall_index),
-            line: LineSegment2::of(origin, closest_hit_point)
+        Some(hit_wall) => {
+            HitResult {
+                has_hit: true,
+                region: region.clone(),
+                hit_wall: Some(Rc::downgrade(&hit_wall)),
+                line: LineSegment2::of(origin, closest_hit_point)
+            }
         }
     }
 }
 
 struct HitResult {
     has_hit: bool,
-    region_index: usize,
-    hit_wall_index: Option<usize>,
+    region: Weak<RefCell<Region>>,
+    hit_wall: Option<Weak<RefCell<Wall>>>,
     line: LineSegment2
 }

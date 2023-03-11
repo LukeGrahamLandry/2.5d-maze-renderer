@@ -13,75 +13,55 @@ pub struct World {
 }
 
 impl World {
-    pub(crate) fn new() -> World {
-        World {
-            player: Player::new(),
-            regions: vec![]
-        }
-    }
-
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>){
         self.player.update(&pressed, &self.regions, delta_time);
     }
 
     pub(crate) fn create_example() -> World {
-        let mut world = World::new();
-        world.regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
-        world.regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
-        world.regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
+        let mut regions = vec![];
 
-        world.regions[0].borrow_mut().floor_color = Color::RGB(0, 50, 50);
-        world.regions[1].borrow_mut().floor_color = Color::RGB(0, 50, 0);
-        world.regions[2].borrow_mut().floor_color = Color::RGB(0, 0, 50);
-        // world.regions[1].light_intensity = 0.5;
-        // world.regions[2].light_intensity = 0.01;
+        regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
+        regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
+        regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
+
+        regions[0].borrow_mut().floor_color = Color::RGB(0, 50, 50);
+        regions[1].borrow_mut().floor_color = Color::RGB(0, 50, 0);
+        regions[2].borrow_mut().floor_color = Color::RGB(0, 0, 50);
+        // regions[1].light_intensity = 0.5;
+        // regions[2].light_intensity = 0.01;
 
         let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
-        world.regions[0].borrow_mut().walls.push(Wall {
-            normal: line.normal(),
-            line,
-            has_next: true,
-            next_region: Some(2),
-            next_wall: Some(1),
-            region: (Rc::downgrade(&world.regions[0]))
-        });
+        let wall = Wall::new(line, line.normal(), &regions[0]);
+        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[1]));
+        regions[0].borrow_mut().walls.push(wall);
 
         let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-        let wall = Wall {
-            normal: line.normal().negate(),
-            line,
-            has_next: true,
-            next_region: Some(2),
-            next_wall: Some(0),
-            region: Rc::downgrade(&world.regions[0])
-        };
-        world.regions[0].borrow_mut().walls.push(wall);
+        let wall = Wall::new(line, line.normal().negate(), &regions[0]);
+        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[0]));
+        regions[0].borrow_mut().walls.push(wall);
 
-        world.regions[0].borrow_mut().walls[0].has_next = true;
-        world.regions[0].borrow_mut().walls[0].next_region = Some(1);
-        world.regions[0].borrow_mut().walls[0].next_wall = Some(1);
 
-        world.regions[1].borrow_mut().walls[1].has_next = true;
-        world.regions[1].borrow_mut().walls[1].next_region = Some(0);
-        world.regions[1].borrow_mut().walls[1].next_wall = Some(0);
+        regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[1]));
 
-        world.regions[1].borrow_mut().walls[2].has_next = true;
-        world.regions[1].borrow_mut().walls[2].next_region = Some(2);
-        world.regions[1].borrow_mut().walls[2].next_wall = Some(3);
+        regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(Rc::downgrade(&regions[0].borrow().walls[0]));
 
-        world.regions[2].borrow_mut().walls[3].has_next = true;
-        world.regions[2].borrow_mut().walls[3].next_region = Some(1);
-        world.regions[2].borrow_mut().walls[3].next_wall = Some(2);
+        regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[3]));
 
-        world.player.pos.x = 150.0;
-        world.player.pos.y = 250.0;
+        regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[2]));
 
-        world
+        let mut player = Player::new(&regions[0]);
+        player.pos.x = 150.0;
+        player.pos.y = 250.0;
+
+        World {
+            player,
+            regions
+        }
     }
 }
 
 pub(crate) struct Region {
-    pub(crate) walls: Vec<Wall>,
+    pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
     pub(crate) floor_color: Color,
     pub(crate) light_pos: Vector2,
     pub(crate) light_intensity: f64
@@ -102,54 +82,33 @@ impl Region {
         {
             let mut m_region = region.borrow_mut();
 
+
+            // Since we're using the canvas coordinate system, down is positive y.
             let (x1, x2) = (x1.max(x2), x1.min(x2));
             let (y1, y2) = (y1.min(y2), y1.max(y2));
 
             // Top
             let line = LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x2, y1));
-            m_region.walls.push(Wall {
-                normal: line.normal(),
-                line,
-                has_next: false,
-                next_region: None,
-                next_wall: None,
-                region: Rc::downgrade(&region)
-            });
+            m_region.walls.push(Wall::new(line, line.normal(), &region));
 
             // Bottom
             let line = LineSegment2::of(Vector2::of(x1, y2), Vector2::of(x2, y2));
-            m_region.walls.push(Wall {
-                normal: line.normal().negate(),
-                line,
-                has_next: false,
-                next_region: None,
-                next_wall: None,
-                region: Rc::downgrade(&region)
-            });
+            m_region.walls.push(Wall::new(line, line.normal().negate(), &region));
 
             // Left
             let line = LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2));
-            m_region.walls.push(Wall {
-                normal: line.normal(),
-                line,
-                has_next: false,
-                next_region: None,
-                next_wall: None,
-                region: Rc::downgrade(&region)
-            });
+            m_region.walls.push(Wall::new(line, line.normal(), &region));
 
             // Right
             let line = LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2));
-            m_region.walls.push(Wall {
-                normal: line.normal().negate(),
-                line,
-                has_next: false,
-                next_region: None,
-                next_wall: None,
-                region: Rc::downgrade(&region)
-            });
+            m_region.walls.push(Wall::new(line, line.normal().negate(), &region));
 
-            m_region.light_pos = m_region.walls[0].line.a.add(&m_region.walls[0].line.direction().scale(-0.25).add(&m_region.walls[2].line.direction().scale(-0.25)));
+            // Put a light somewhere random so I can see the shading
+            m_region.light_pos = {
+                let wall0 = m_region.walls[0].borrow();
+                let wall2 = m_region.walls[2].borrow();
+                wall0.line.a.add(&wall0.line.direction().scale(-0.25).add(&wall2.line.direction().scale(-0.25)))
+            }
         }
 
         region
@@ -158,14 +117,26 @@ impl Region {
 
 pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
-    pub(crate) has_next: bool,
-    pub(crate) next_region: Option<usize>,
-    pub(crate) next_wall: Option<usize>,
     pub(crate) normal: Vector2,
-    pub(crate) region: Weak<RefCell<Region>>
+    pub(crate) region: Weak<RefCell<Region>>,
+    pub(crate) next_wall: Option<Weak<RefCell<Wall>>>
 }
 
 impl Wall {
+    pub(crate) fn new(line: LineSegment2, normal: Vector2, region: &Rc<RefCell<Region>>) -> Rc<RefCell<Wall>> {
+        let wall = Wall {
+            region: Rc::downgrade(&region),
+            next_wall: None,
+            normal,
+            line,
+        };
+        Rc::new(RefCell::new(wall))
+    }
+
+    pub(crate) fn is_portal(&self) -> bool {
+        self.next_wall.is_some()
+    }
+
     pub(crate) fn scale_factor(from: &Wall, to: &Wall) -> f64 {
         to.line.length() / from.line.length()
     }
