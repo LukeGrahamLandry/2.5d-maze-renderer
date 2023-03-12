@@ -4,7 +4,6 @@ use std::thread;
 use std::time::Instant;
 
 use sdl2::event::Event;
-use sdl2::image::InitFlag;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -20,7 +19,6 @@ mod mth;
 pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
-    let _image_context = sdl2::image::init(InitFlag::PNG | InitFlag::JPG)?;
     let window = video_subsystem
         .window("walls", 800, 600)
         .position_centered()
@@ -38,8 +36,6 @@ pub fn run() -> Result<(), String> {
 
     canvas.clear();
     canvas.present();
-
-    canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
 
     let mut events = sdl_context.event_pump()?;
 
@@ -76,7 +72,7 @@ pub fn run() -> Result<(), String> {
 
         world.update(duration, &keys);
 
-        canvas.set_draw_color(Color::RGBA(0, 0, 0, 255));
+        canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
 
         if first_person_rendering {

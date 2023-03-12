@@ -4,7 +4,7 @@ use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
-use crate::camera::{ray_direction_for_x, ray_trace, SCREEN_WIDTH};
+use crate::camera::{HitResult, ray_direction_for_x, ray_trace, SCREEN_WIDTH};
 
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
@@ -20,22 +20,23 @@ impl World {
     }
 
     pub(crate) fn on_mouse_click(&mut self, mouse_button: MouseButton) {
-        let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.look_direction);
-        let segments = ray_trace(self.player.pos, direction , &self.player.region);
-        let hit = segments.last().unwrap();
-
-        println!("click");
+        let hit: HitResult = {
+            let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.look_direction);
+            let segments = ray_trace(self.player.pos, direction , &self.player.region);
+            segments.last().unwrap().clone()
+        };
 
         match &hit.hit_wall {
             None => {}
             Some(hit_wall) => {
-                println!("portal hit wall");
-                let hit_wall = hit_wall.upgrade().unwrap();
-                let hit_wall = hit_wall.borrow();
-                let half_portal_direction = hit_wall.line.direction().normalize().scale(10.0);
-                let start_point = hit.line.b.add(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
-                let end_point = hit.line.b.subtract(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
-                let new_portal = Wall::new(LineSegment2::of(start_point, end_point), hit_wall.normal, &hit_wall.region.upgrade().unwrap());
+                let new_portal = {
+                    let hit_wall = hit_wall.upgrade().unwrap();
+                    let hit_wall = hit_wall.borrow();
+                    let half_portal_direction = hit_wall.line.direction().normalize().scale(10.0);
+                    let start_point = hit.line.b.add(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
+                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
+                    Wall::new(LineSegment2::of(start_point, end_point), hit_wall.normal, &hit_wall.region.upgrade().unwrap())
+                };  // Drop the borrow of the hit_wall, incase the ray tracing ran out of depth at a portal. Lets us re-borrow in place_portal.
 
                 match mouse_button {
                     MouseButton::Left => {
@@ -123,7 +124,6 @@ impl World {
         // Add the new portal to the world.
         let region = new_portal.borrow().region.upgrade().unwrap();
         let mut region = region.borrow_mut();
-        println!("{:?}", new_portal);
         region.walls.push(new_portal);
     }
 }
@@ -157,7 +157,7 @@ impl Region {
     fn new() -> Rc<RefCell<Region>> {
         Rc::new(RefCell::new(Region {
             walls: vec![],
-            floor_color: Color::RGBA(0, 0, 0, 255),
+            floor_color: Color::RGB(0, 0, 0),
             light_pos: Vector2::zero(),
             light_intensity: 1.0
         }))

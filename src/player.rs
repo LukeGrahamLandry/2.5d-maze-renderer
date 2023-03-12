@@ -28,7 +28,7 @@ impl Player {
     }
 
     pub(crate) fn handle_collisions(&mut self, regions: &Vec<Rc<RefCell<Region>>>, mut move_direction: Vector2) -> Vector2 {
-        let player_size = 10.0;
+        let player_size = 11.0;
         let last_region = self.region.upgrade().unwrap();
         for wall in last_region.borrow().walls.iter() {
             let wall = wall.borrow();
@@ -43,8 +43,6 @@ impl Player {
                 }
 
                 let hit_back = wall.normal.dot(&move_direction) > 0.0;
-
-
                 if wall.next_wall.is_none() || hit_back {
                     move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
                 } else {

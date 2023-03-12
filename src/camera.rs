@@ -2,8 +2,7 @@ use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::rc::{Rc, Weak};
 use sdl2::pixels::Color;
-use sdl2::rect::Rect;
-use sdl2::render::{Canvas, WindowCanvas};
+use sdl2::render::WindowCanvas;
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 
@@ -19,10 +18,6 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     let half_player_size = 5;
     let x = world.player.pos.x as i32;
     let y = world.player.pos.y as i32;
-
-    // Draw the player.
-    canvas.set_draw_color(Color::RGB(255, 255, 255));
-    canvas.fill_rect(Rect::new(x - half_player_size, y - half_player_size, (half_player_size * 2) as u32, (half_player_size * 2) as u32)).unwrap();
 
     // Draw the regions.
     let mut i = 0;
@@ -48,6 +43,13 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             draw_ray_segment_2d(canvas, segment);
         }
     }
+
+    // Draw the player.
+    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    for i in 0..(half_player_size * 2) {
+        let x = (x - half_player_size + i) as f64;
+        canvas.draw_line(Vector2::of(x, (y - half_player_size) as f64).sdl(), Vector2::of(x, (y + half_player_size) as f64).sdl()).unwrap();
+    }
 }
 
 fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: bool) {
@@ -69,18 +71,18 @@ fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: boo
     canvas.draw_line(wall.line.a.sdl(), wall.line.b.sdl()).unwrap();
 
     // Draw normal
-    canvas.set_draw_color(Color::RGBA(200, 0, 200, 255));
+    canvas.set_draw_color(Color::RGB(200, 0, 200));
     canvas.draw_line(wall.line.middle().sdl(), wall.line.middle().add(&wall.normal.scale(5.0)).sdl()).unwrap();
 }
 
 fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
     match segment.hit_wall {
         Some(_) => {
-            canvas.set_draw_color(Color::RGBA(150, 150, 0, 255));
+            canvas.set_draw_color(Color::RGB(150, 150, 0));
             canvas.draw_line(segment.line.a.sdl(), segment.line.b.sdl()).unwrap();
         }
         None => {
-            canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
+            canvas.set_draw_color(Color::RGB(150, 150, 150));
             canvas.draw_line(segment.line.a.sdl(), segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)).sdl()).unwrap();
         }
     }
@@ -245,6 +247,7 @@ fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Weak<RefCell<R
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct HitResult {
     pub(crate) region: Weak<RefCell<Region>>,
     pub(crate) hit_wall: Option<Weak<RefCell<Wall>>>,
