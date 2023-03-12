@@ -10,7 +10,8 @@ pub(crate) struct Player {
     pub(crate) look_direction: Vector2,
     pub(crate) speed: f64,
     pub(crate) region: Weak<RefCell<Region>>,
-    pub(crate) has_flash_light: bool
+    pub(crate) has_flash_light: bool,
+    pub(crate) portals: [Option<Weak<RefCell<Wall>>>; 2],
 }
 
 const MOVE_SPEED: f64 = 200.0;
@@ -103,7 +104,8 @@ impl Player {
             look_direction: Vector2::of(0.0, -1.0),
             speed: 0.0,
             region: Rc::downgrade(start_region),
-            has_flash_light: false
+            has_flash_light: false,
+            portals: [None, None],
         }
     }
 }

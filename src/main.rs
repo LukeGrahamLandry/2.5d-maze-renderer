@@ -57,9 +57,8 @@ pub fn run() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => first_person_rendering = !first_person_rendering,
 
-                Event::MouseButtonDown { x, y, .. } => {
-                    println!("Click ({}, {})", x, y);
-                    canvas.fill_rect(Rect::new(x, y, 10, 10))?;
+                Event::MouseButtonDown { x, y, mouse_btn, .. } => {
+                    world.on_mouse_click(mouse_btn);
                 }
                 _ => {}
             }

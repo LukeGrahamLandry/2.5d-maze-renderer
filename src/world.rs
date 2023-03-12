@@ -2,7 +2,9 @@ use std::cell::{Cell, Ref, RefCell};
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
+use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
+use crate::camera::{ray_direction_for_x, ray_trace, SCREEN_WIDTH};
 
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
@@ -15,6 +17,37 @@ pub struct World {
 impl World {
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>){
         self.player.update(&pressed, &self.regions, delta_time);
+    }
+
+    pub(crate) fn on_mouse_click(&mut self, mouse_button: MouseButton) {
+        let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.look_direction);
+        let segments = ray_trace(self.player.pos, direction , &self.player.region);
+        let hit = segments.last().unwrap();
+
+        println!("click");
+
+        match &hit.hit_wall {
+            None => {}
+            Some(hit_wall) => {
+                println!("portal hit wall");
+                let hit_wall = hit_wall.upgrade().unwrap();
+                let hit_wall = hit_wall.borrow();
+                let half_portal_direction = hit_wall.line.direction().normalize().scale(10.0);
+                let start_point = hit.line.b.add(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
+                let end_point = hit.line.b.subtract(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
+                let new_portal = Wall::new(LineSegment2::of(start_point, end_point), hit_wall.normal, &hit_wall.region.upgrade().unwrap());
+
+                match mouse_button {
+                    MouseButton::Left => {
+                        self.place_portal(new_portal, 0, 1);
+                    }
+                    MouseButton::Right => {
+                        self.place_portal(new_portal, 1, 0);
+                    }
+                    _ => { return; }
+                }
+            }
+        }
     }
 
     pub(crate) fn create_example() -> World {
@@ -58,8 +91,44 @@ impl World {
             regions
         }
     }
+    fn place_portal(&mut self, new_portal: Rc<RefCell<Wall>>, replacing_index: usize, connecting_index: usize) {
+        // If the player already had a portal placed in this slot, remove it.
+        match &self.player.portals[replacing_index] {
+            None => {}
+            Some(replacing_portal) => {
+                let replacing_portal_wall = replacing_portal.upgrade().unwrap();
+                let replacing_portal_wall = replacing_portal_wall.borrow();
+                let region = replacing_portal_wall.region.upgrade().unwrap();
+                let mut region = region.borrow_mut();
+
+                region.remove_wall(&replacing_portal);
+                self.player.portals[replacing_index] = None;
+            }
+        }
+
+        // Put the new portal in the player's slot.
+        self.player.portals[replacing_index] = Some(Rc::downgrade(&new_portal));
+
+        // If there's a portal in the other slot, connect them.
+        match &self.player.portals[connecting_index] {
+            None => {}
+            Some(connecting_portal) => {
+                new_portal.borrow_mut().next_wall = Some(connecting_portal.clone());
+                let connecting_portal = connecting_portal.upgrade().unwrap();
+                let mut connecting_portal = connecting_portal.borrow_mut();
+                connecting_portal.next_wall = Some(Rc::downgrade(&new_portal));
+            }
+        }
+
+        // Add the new portal to the world.
+        let region = new_portal.borrow().region.upgrade().unwrap();
+        let mut region = region.borrow_mut();
+        println!("{:?}", new_portal);
+        region.walls.push(new_portal);
+    }
 }
 
+#[derive(Debug)]
 pub(crate) struct Region {
     pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
     pub(crate) floor_color: Color,
@@ -68,6 +137,23 @@ pub(crate) struct Region {
 }
 
 impl Region {
+    pub(crate) fn remove_wall(&mut self, wall: &Weak<RefCell<Wall>>){
+        let mut to_remove = None;
+        for (i, w) in self.walls.iter().enumerate() {
+            if Rc::downgrade(w).ptr_eq(wall) {
+                to_remove = Some(i);
+                break;
+            }
+        }
+
+        match to_remove {
+            None => {}
+            Some(i) => {
+                self.walls.remove(i);
+            }
+        }
+    }
+
     fn new() -> Rc<RefCell<Region>> {
         Rc::new(RefCell::new(Region {
             walls: vec![],
@@ -81,7 +167,6 @@ impl Region {
         let region = Region::new();
         {
             let mut m_region = region.borrow_mut();
-
 
             // Since we're using the canvas coordinate system, down is positive y.
             let (x1, x2) = (x1.max(x2), x1.min(x2));
@@ -115,6 +200,7 @@ impl Region {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,

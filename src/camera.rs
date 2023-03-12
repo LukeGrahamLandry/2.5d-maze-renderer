@@ -12,7 +12,7 @@ use crate::world::{Region, Wall, World};
 const FOV_DEG: i32 = 45;
 const VIEW_DIST: f64 = 1000.0;
 const SCREEN_HEIGHT: f64 = 600.0;
-const SCREEN_WIDTH: u32 = 800;
+pub const SCREEN_WIDTH: u32 = 800;
 const PORTAL_LIMIT: u16 = 5;
 
 pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
@@ -42,7 +42,7 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     // Draw view rays.
     for x in 0..(SCREEN_WIDTH as i32) {
         let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(&world, world.player.pos, look_direction, &world.player.region);
+        let segments = ray_trace(world.player.pos, look_direction, &world.player.region);
 
         for segment in &segments {
             draw_ray_segment_2d(canvas, segment);
@@ -74,19 +74,22 @@ fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: boo
 }
 
 fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
-    if segment.has_hit {
-        canvas.set_draw_color(Color::RGBA(150, 150, 0, 255));
-        canvas.draw_line(segment.line.a.sdl(), segment.line.b.sdl()).unwrap();
-    } else {
-        canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
-        canvas.draw_line(segment.line.a.sdl(), segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)).sdl()).unwrap();
+    match segment.hit_wall {
+        Some(_) => {
+            canvas.set_draw_color(Color::RGBA(150, 150, 0, 255));
+            canvas.draw_line(segment.line.a.sdl(), segment.line.b.sdl()).unwrap();
+        }
+        None => {
+            canvas.set_draw_color(Color::RGBA(150, 150, 150, 255));
+            canvas.draw_line(segment.line.a.sdl(), segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)).sdl()).unwrap();
+        }
     }
 }
 
 pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64, mouse_pos: &Vector2){
     for x in 0..(SCREEN_WIDTH as i32) {
         let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(&world, world.player.pos, look_direction, &world.player.region);
+        let segments = ray_trace(world.player.pos, look_direction, &world.player.region);
 
         let mut cumulative_dist = 0.0;
         for segment in &segments {
@@ -94,7 +97,7 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             cumulative_dist += segment.line.length();
         }
 
-        draw_wall_3d(world, canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
+        draw_wall_3d(&world.player, canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
     }
 }
 
@@ -110,7 +113,7 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, length: f64, s
     canvas.draw_line(Vector2::of(screen_x as f64, bottom).sdl(), Vector2::of(screen_x as f64, top).sdl()).unwrap();
 }
 
-fn draw_wall_3d(world: &World, canvas: &mut WindowCanvas, hit: &HitResult, player_look_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
+fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, player_look_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     let hit_point = hit.line.b;
     let wall_normal = match &hit.hit_wall {
         None => { player_look_direction }
@@ -119,7 +122,7 @@ fn draw_wall_3d(world: &World, canvas: &mut WindowCanvas, hit: &HitResult, playe
         }
     };
 
-    let (red, green, blue) = wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &world.player, screen_x);
+    let (red, green, blue) = wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &player, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
     canvas.set_draw_color(Color::RGB(red, green, blue));
@@ -156,7 +159,7 @@ fn project_to_screen(z_distance: f64) -> (f64, f64) {
 }
 
 /// Assuming the forwards points at the middle of the screen, return it rotated to point at x instead.
-fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
+pub(crate) fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
     let t = screen_x as f64 / SCREEN_WIDTH as f64;
     let delta_deg = (t - 0.5) * FOV_DEG as f64;
     let delta_rad = PI * delta_deg / 180.0;
@@ -164,10 +167,10 @@ fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
 }
 
 /// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region: &Weak<RefCell<Region>>) -> Vec<HitResult> {
+pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Weak<RefCell<Region>>) -> Vec<HitResult> {
     let mut segments = vec![];
 
-    let mut segment = single_ray_trace(world, origin, direction, region);
+    let mut segment = single_ray_trace(origin, direction, region);
     for _ in 0..PORTAL_LIMIT {
         match &segment.hit_wall {
             None => { break; }
@@ -192,7 +195,7 @@ fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region:
                         direction = Wall::rotate(direction, &wall, &new_wall);
 
                         segments.push(segment);
-                        segment = single_ray_trace(world, origin.add(&direction), direction, &new_wall.region);
+                        segment = single_ray_trace(origin.add(&direction), direction, &new_wall.region);
                     }
                 }
             }
@@ -204,7 +207,7 @@ fn ray_trace(world: &World, mut origin: Vector2, mut direction: Vector2, region:
 }
 
 /// Sends a ray through a single region until it hits a wall.
-fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region: &Weak<RefCell<Region>>) -> HitResult {
+fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Weak<RefCell<Region>>) -> HitResult {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
     let mut shortest_hit_distance = f64::INFINITY;
@@ -227,7 +230,6 @@ fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region: 
     match hit_wall {
         None => {
             HitResult {
-                has_hit: false,
                 region: region.clone(),
                 hit_wall: None,
                 line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
@@ -235,7 +237,6 @@ fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region: 
         }
         Some(hit_wall) => {
             HitResult {
-                has_hit: true,
                 region: region.clone(),
                 hit_wall: Some(Rc::downgrade(&hit_wall)),
                 line: LineSegment2::of(origin, closest_hit_point)
@@ -244,9 +245,8 @@ fn single_ray_trace(world: &World, origin: Vector2, direction: Vector2, region: 
     }
 }
 
-struct HitResult {
-    has_hit: bool,
-    region: Weak<RefCell<Region>>,
-    hit_wall: Option<Weak<RefCell<Wall>>>,
-    line: LineSegment2
+pub(crate) struct HitResult {
+    pub(crate) region: Weak<RefCell<Region>>,
+    pub(crate) hit_wall: Option<Weak<RefCell<Wall>>>,
+    pub(crate) line: LineSegment2
 }
