@@ -78,13 +78,16 @@ impl Vector2 {
 
     // Get this vector's angle around the unit circle.
     pub(crate) fn angle(&self) -> f64 {
-        let a = self.normalize().dot(&Vector2::of(1.0, 0.0)).acos();
+        self.angle_between(&Vector2::of(1.0, 0.0))
+    }
+
+    pub(crate) fn angle_between(&self, other: &Vector2) -> f64 {
+        let a = self.normalize().dot(other).acos();
         if self.y >= 0.0 {
             a
         } else {
             -a
         }
-
     }
 
     pub(crate) fn is_nan(&self) -> bool {

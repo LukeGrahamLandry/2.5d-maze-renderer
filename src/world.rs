@@ -1,4 +1,5 @@
 use std::cell::{Cell, Ref, RefCell};
+use std::f64::consts::PI;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
@@ -228,7 +229,12 @@ impl Wall {
     }
 
     pub(crate) fn rotate(direction: Vector2, from: &Wall, to: &Wall) -> Vector2 {
-        let delta_rad = to.line.normal().angle() - from.line.normal().angle();
-        direction.rotate(delta_rad)
+        let rot_offset = from.normal.angle_between(&to.normal.negate());
+        let dir = direction.rotate(rot_offset);
+        if dir.dot(&to.normal) > 0.0 {
+            dir
+        } else {
+            dir.negate()
+        }
     }
 }
