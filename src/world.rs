@@ -1,35 +1,37 @@
-use std::cell::{Cell, Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell, RefMut};
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
-use crate::camera::{HitResult, ray_direction_for_x, ray_trace, SCREEN_WIDTH};
+use crate::camera::{HitKind, HitResult, ray_direction_for_x, ray_trace, SCREEN_WIDTH};
 
 use crate::mth::{LineSegment2, Vector2};
-use crate::player::Player;
+use crate::player::{Player, WorldThing};
 
 pub struct World {
     pub(crate) regions: Vec<Rc<RefCell<Region>>>,
-    pub(crate) player: Player
+    pub(crate) player: Rc<RefCell<Player>>
 }
 
 impl World {
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
-        self.player.update(&pressed, &self.regions, delta_time, delta_mouse);
+        self.player.borrow_mut().update(&pressed, &self.regions, delta_time, delta_mouse);
     }
 
     pub(crate) fn on_mouse_click(&mut self, mouse_button: MouseButton) {
         let hit: HitResult = {
-            let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.look_direction);
-            let segments = ray_trace(self.player.pos, direction , &self.player.region);
+            let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.borrow().look_direction);
+            let segments = ray_trace(self.player.borrow().pos, direction , &self.player.borrow().region);
             segments.last().unwrap().clone()
         };
 
-        match &hit.hit_wall {
-            None => {}
-            Some(hit_wall) => {
+        match &hit.kind {
+            HitKind::None => {}
+            HitKind::Player { .. } => {}
+            HitKind::Wall {hit_wall, ..} => {
                 let new_portal = {
                     let hit_wall = hit_wall.upgrade().unwrap();
                     let hit_wall = hit_wall.borrow();
@@ -47,8 +49,8 @@ impl World {
                         self.place_portal(new_portal, 1, 0);
                     }
                     MouseButton::Middle => {
-                        self.player.clear_portal(0);
-                        self.player.clear_portal(1);
+                        self.player.borrow_mut().clear_portal(0);
+                        self.player.borrow_mut().clear_portal(1);
                     }
                     _ => { return; }
                 }
@@ -91,6 +93,12 @@ impl World {
         let mut player = Player::new(&regions[0]);
         player.pos.x = 150.0;
         player.pos.y = 250.0;
+        player.update_bounding_box();
+        let id = player.id;
+
+        let player = Rc::new(RefCell::new(player));
+        let weak_player = Rc::downgrade(&player);
+        regions[0].borrow_mut().things.insert(id, weak_player);
 
         World {
             player,
@@ -98,14 +106,16 @@ impl World {
         }
     }
     fn place_portal(&mut self, new_portal: Rc<RefCell<Wall>>, replacing_index: usize, connecting_index: usize) {
+        let mut player = self.player.borrow_mut();
+
         // If the player already had a portal placed in this slot, remove it.
-        self.player.clear_portal(replacing_index);
+        player.clear_portal(replacing_index);
 
         // Put the new portal in the player's slot.
-        self.player.portals[replacing_index] = Some(new_portal.clone());
+        player.portals[replacing_index] = Some(new_portal.clone());
 
         // If there's a portal in the other slot, connect them.
-        match &self.player.portals[connecting_index] {
+        match &player.portals[connecting_index] {
             None => {}
             Some(connecting_portal) => {
                 new_portal.borrow_mut().next_wall = Some(Rc::downgrade(connecting_portal));
@@ -125,7 +135,8 @@ pub(crate) struct Region {
     pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
     pub(crate) floor_color: Color,
     pub(crate) light_pos: Vector2,
-    pub(crate) light_intensity: f64
+    pub(crate) light_intensity: f64,
+    pub(crate) things: HashMap<u64, Weak<RefCell<dyn WorldThing>>>
 }
 
 impl Region {
@@ -151,7 +162,8 @@ impl Region {
             walls: vec![],
             floor_color: Color::RGB(0, 0, 0),
             light_pos: Vector2::zero(),
-            light_intensity: 1.0
+            light_intensity: 1.0,
+            things: HashMap::with_capacity(1)
         }))
     }
 
@@ -160,25 +172,11 @@ impl Region {
         {
             let mut m_region = region.borrow_mut();
 
-            // Since we're using the canvas coordinate system, down is positive y.
-            let (x1, x2) = (x1.max(x2), x1.min(x2));
-            let (y1, y2) = (y1.min(y2), y1.max(y2));
-
-            // Top
-            let line = LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x2, y1));
-            m_region.walls.push(Wall::new(line, line.normal(), &region));
-
-            // Bottom
-            let line = LineSegment2::of(Vector2::of(x1, y2), Vector2::of(x2, y2));
-            m_region.walls.push(Wall::new(line, line.normal().negate(), &region));
-
-            // Left
-            let line = LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2));
-            m_region.walls.push(Wall::new(line, line.normal(), &region));
-
-            // Right
-            let line = LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2));
-            m_region.walls.push(Wall::new(line, line.normal().negate(), &region));
+            let walls = LineSegment2::new_square(x1, y1, x2, y2);
+            m_region.walls.push(Wall::new(walls[0], walls[0].normal(), &region));
+            m_region.walls.push(Wall::new(walls[1], walls[1].normal().negate(), &region));
+            m_region.walls.push(Wall::new(walls[2], walls[2].normal(), &region));
+            m_region.walls.push(Wall::new(walls[3], walls[3].normal().negate(), &region));
 
             // Put a light somewhere random so I can see the shading
             m_region.light_pos = {

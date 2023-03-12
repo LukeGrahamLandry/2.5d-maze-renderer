@@ -9,21 +9,21 @@ use crate::player::Player;
 use crate::world::{Region, Wall, World};
 
 const FOV_DEG: i32 = 45;
-const VIEW_DIST: f64 = 1000.0;
+pub const VIEW_DIST: f64 = 1000.0;
 const SCREEN_HEIGHT: f64 = 600.0;
 pub const SCREEN_WIDTH: u32 = 800;
-const PORTAL_LIMIT: u16 = 5;
+const PORTAL_LIMIT: u16 = 15;
 
 pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
     let half_player_size = 5;
-    let x = world.player.pos.x as i32;
-    let y = world.player.pos.y as i32;
+    let x = world.player.borrow().pos.x as i32;
+    let y = world.player.borrow().pos.y as i32;
 
     // Draw the regions.
     let mut i = 0;
     for region in world.regions.iter() {
         for wall in region.borrow().walls.iter() {
-            let contains_player = Rc::ptr_eq(&world.player.region, region);
+            let contains_player = Rc::ptr_eq(&world.player.borrow().region, region);
             draw_wall_2d(canvas, &wall.borrow(), contains_player);
         }
 
@@ -36,8 +36,8 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
 
     // Draw view rays.
     for x in 0..(SCREEN_WIDTH as i32) {
-        let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(world.player.pos, look_direction, &world.player.region);
+        let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
+        let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
 
         for segment in &segments {
             draw_ray_segment_2d(canvas, segment);
@@ -46,14 +46,13 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
 
     // Draw the player.
     canvas.set_draw_color(Color::RGB(255, 255, 255));
-    for i in 0..(half_player_size * 2) {
-        let x = (x - half_player_size + i) as f64;
-        canvas.draw_line(Vector2::of(x, (y - half_player_size) as f64).sdl(), Vector2::of(x, (y + half_player_size) as f64).sdl()).unwrap();
+    for side in &world.player.borrow().bounding_box {
+        canvas.draw_line(side.a.sdl(), side.b.sdl()).unwrap();
     }
 
     // Draw look direction.
     canvas.set_draw_color(Color::RGB(255, 0, 0));
-    canvas.draw_line(world.player.pos.sdl(), world.player.pos.add(&world.player.look_direction.scale(half_player_size as f64)).sdl()).unwrap();
+    canvas.draw_line(world.player.borrow().pos.sdl(), world.player.borrow().pos.add(&world.player.borrow().look_direction.scale(half_player_size as f64)).sdl()).unwrap();
 }
 
 fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: bool) {
@@ -80,12 +79,13 @@ fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: boo
 }
 
 fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
-    match segment.hit_wall {
-        Some(_) => {
+    match segment.kind {
+        HitKind::Wall { .. }
+         | HitKind::Player { .. } => {
             canvas.set_draw_color(Color::RGB(150, 150, 0));
             canvas.draw_line(segment.line.a.sdl(), segment.line.b.sdl()).unwrap();
         }
-        None => {
+        HitKind::None => {
             canvas.set_draw_color(Color::RGB(150, 150, 150));
             canvas.draw_line(segment.line.a.sdl(), segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)).sdl()).unwrap();
         }
@@ -94,8 +94,8 @@ fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
 
 pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
     for x in 0..(SCREEN_WIDTH as i32) {
-        let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(world.player.pos, look_direction, &world.player.region);
+        let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
+        let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
 
         let mut cumulative_dist = 0.0;
         for segment in &segments {
@@ -103,7 +103,7 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             cumulative_dist += segment.line.length();
         }
 
-        draw_wall_3d(&world.player, canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
+        draw_wall_3d(&world.player.borrow(), canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
     }
 }
 
@@ -121,14 +121,26 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, length: f64, s
 
 fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, player_look_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     let hit_point = hit.line.b;
-    let wall_normal = match &hit.hit_wall {
-        None => { player_look_direction }
-        Some(hit_wall) => {
+    let wall_normal = match &hit.kind {
+        HitKind::None { .. } => { player_look_direction }
+        HitKind::Wall { hit_wall, .. } => {
             hit_wall.upgrade().unwrap().borrow().normal
+        }
+        HitKind::Player { box_side, .. } => {
+            box_side.normal()
         }
     };
 
-    let (red, green, blue) = wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &player, screen_x);
+    let (mut red, mut green, mut blue) = wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &player, screen_x);
+
+    match &hit.kind {
+        HitKind::None => {}
+        HitKind::Wall { .. } => {}
+        HitKind::Player { .. } => {
+            (red, green, blue) = (255, 0, 0);
+        }
+    }
+
     let (top, bottom) = project_to_screen(cumulative_dist);
 
     canvas.set_draw_color(Color::RGB(red, green, blue));
@@ -178,9 +190,10 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Rc
 
     let mut segment = single_ray_trace(origin, direction, region);
     for _ in 0..PORTAL_LIMIT {
-        match &segment.hit_wall {
-            None => { break; }
-            Some(hit_wall) => {
+        match &segment.kind {
+            HitKind::None { .. }
+             | HitKind::Player { .. } => { break; }
+            HitKind::Wall { hit_wall, .. } => {
                 let wall = hit_wall.upgrade().unwrap();
                 let wall = wall.borrow();
 
@@ -220,7 +233,6 @@ fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Reg
     let mut closest_hit_point = Vector2::NAN;
     let mut hit_wall = None;
 
-
     let m_region = region.borrow();
     for wall in &m_region.walls {
         let hit = wall.borrow().line.intersection(&ray);
@@ -233,27 +245,62 @@ fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Reg
         }
     }
 
-    match hit_wall {
+    let mut hit_result = match hit_wall {
         None => {
             HitResult {
                 region: Rc::downgrade(region),
-                hit_wall: None,
                 line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
+                kind: HitKind::None
             }
         }
         Some(hit_wall) => {
             HitResult {
                 region: Rc::downgrade(region),
-                hit_wall: Some(Rc::downgrade(&hit_wall)),
-                line: LineSegment2::of(origin, closest_hit_point)
+                line: LineSegment2::of(origin, closest_hit_point),
+                kind: HitKind::Wall {
+                    hit_wall: Rc::downgrade(&hit_wall)
+                }
             }
+        }
+    };
+
+    for (_id, thing) in &m_region.things {
+        let hit = thing.upgrade().unwrap().borrow().collide(origin, direction);
+        if hit.dist() < hit_result.dist() {
+            hit_result = hit;
+        }
+    }
+
+    hit_result
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct HitResult {
+    pub(crate) region: Weak<RefCell<Region>>,
+    pub(crate) line: LineSegment2,
+    pub(crate) kind: HitKind
+}
+
+impl HitResult {
+    pub(crate) fn empty(region: &Rc<RefCell<Region>>, origin: Vector2, direction: Vector2) -> HitResult {
+        HitResult  {
+            region: Rc::downgrade(region),
+            line: LineSegment2::of(origin, origin.add(&direction)),
+            kind: HitKind::None
+        }
+    }
+
+    fn dist(&self) -> f64 {
+        match self.kind {
+            HitKind::None => { f64::INFINITY }
+            HitKind::Wall { .. } | HitKind::Player { .. } => { self.line.length() }
         }
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct HitResult {
-    pub(crate) region: Weak<RefCell<Region>>,
-    pub(crate) hit_wall: Option<Weak<RefCell<Wall>>>,
-    pub(crate) line: LineSegment2
+#[derive(Debug, Clone)]
+pub(crate) enum HitKind {
+    None,
+    Wall { hit_wall: Weak<RefCell<Wall>> },
+    Player { box_side: LineSegment2 }
 }

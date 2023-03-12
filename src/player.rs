@@ -1,8 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::f64::consts::PI;
-use std::ops::Deref;
+use std::fmt::{Debug, Formatter};
+use std::ops::{Deref, DerefMut};
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
+use crate::camera::{HitKind, HitResult, VIEW_DIST};
 
 use crate::mth::{LineSegment2, Vector2};
 use crate::world::{Region, Wall};
@@ -14,10 +16,14 @@ pub(crate) struct Player {
     pub(crate) region: Rc<RefCell<Region>>,
     pub(crate) has_flash_light: bool,
     pub(crate) portals: [Option<Rc<RefCell<Wall>>>; 2],
+    pub(crate) bounding_box: [LineSegment2; 4],
+    pub(crate) id: u64
 }
 
 const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
+const PLAYER_SIZE: f64 = 10.0;
+
 impl Player {
     pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Rc<RefCell<Region>>>, delta_time: f64, delta_mouse: i32) {
         if self.update_direction(pressed, delta_mouse) {
@@ -25,6 +31,7 @@ impl Player {
 
             self.pos.x += move_direction.x * delta_time * MOVE_SPEED;
             self.pos.y += move_direction.y * delta_time * MOVE_SPEED;
+            self.update_bounding_box();
         }
     }
 
@@ -32,47 +39,63 @@ impl Player {
         let player_size = 11.0;
         let ray = LineSegment2::from(self.pos, move_direction.scale(player_size));
 
+        {
+            let mut wall = None;
+            let region = self.region.clone();
+            let mut m_region = region.borrow_mut();
+            {
+                for check_wall in m_region.walls.iter() {
+                    let hit_pos = check_wall.borrow().line.intersection(&ray);
+                    if !hit_pos.is_nan(){
+                        wall = Some(check_wall.clone());
+                    }
+                }
+            }
 
-        let mut wall = None;
-        let region = self.region.clone();
-        let m_region = region.borrow();
-        for check_wall in m_region.walls.iter() {
-            let hit_pos = check_wall.borrow().line.intersection(&ray);
-            if !hit_pos.is_nan(){
-                wall = Some(check_wall);
+            match wall {
+                None => {
+                    return move_direction
+                }
+                Some(wall) => {
+                    let wall = wall.borrow();
+                    let hit_pos = wall.line.intersection(&ray);
+                    let t = wall.line.t_of(&hit_pos).abs();
+                    let hit_edge = t < 0.01 || t > 0.99;
+                    let hit_back = wall.normal.dot(&move_direction) > 0.0;
+
+                    if wall.next_wall.is_none() || hit_back || hit_edge {
+                        move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
+                    } else {
+                        let next_wall = wall.next_wall.as_ref().unwrap().upgrade().unwrap();
+                        let next_region = next_wall.borrow().region.clone();
+
+                        if !Rc::ptr_eq(&region, &next_region.upgrade().unwrap()) {
+                            let player = m_region.things.remove(&self.id);
+                            match player {
+                                None => {
+                                    panic!("Tried to remove player from a region but they weren't there.")
+                                }
+                                Some(player) => {
+                                    next_region.upgrade().unwrap().borrow_mut().things.insert(self.id, player);
+                                }
+                            }
+                            self.region = next_region.upgrade().unwrap();
+                        }
+
+                        let next_wall = next_wall.borrow();
+                        self.pos = Wall::translate(self.pos, &wall, &next_wall);
+                        self.look_direction = Wall::rotate(self.look_direction, &wall, &next_wall);
+                        move_direction = Wall::rotate(move_direction, &wall, &next_wall);
+                        self.pos = self.pos.add(&move_direction);
+                    }
+                }
             }
         }
 
-        match wall {
-            None => {
-                move_direction
-            }
-            Some(wall) => {
-                let wall = wall.borrow();
-                let hit_pos = wall.line.intersection(&ray);
-                let t = wall.line.t_of(&hit_pos).abs();
-                let hit_edge = t < 0.01 || t > 0.99;
-                let hit_back = wall.normal.dot(&move_direction) > 0.0;
-
-                if wall.next_wall.is_none() || hit_back || hit_edge {
-                    move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
-                } else {
-                    let next_wall = wall.next_wall.as_ref().unwrap().upgrade().unwrap();
-                    let next_region = next_wall.borrow().region.clone();
-                    self.region = next_region.upgrade().unwrap().clone();
-                    let next_wall = next_wall.borrow();
-                    self.pos = Wall::translate(self.pos, &wall, &next_wall);
-                    self.look_direction = Wall::rotate(self.look_direction, &wall, &next_wall);
-                    move_direction = Wall::rotate(move_direction, &wall, &next_wall);
-                    self.pos = self.pos.add(&move_direction);
-                }
-
-                if move_direction.length() > 0.1 {
-                    self.handle_collisions(regions, move_direction)
-                } else {
-                    move_direction
-                }
-            }
+        if move_direction.length() > 0.1 {
+            self.handle_collisions(regions, move_direction)
+        } else {
+            move_direction
         }
     }
 
@@ -116,9 +139,12 @@ impl Player {
         }
         self.portals[portal_index] = None;
     }
-}
 
-impl Player {
+    pub(crate) fn update_bounding_box(&mut self) {
+        let s = PLAYER_SIZE / 2.0;
+        self.bounding_box = LineSegment2::new_square(self.pos.x - s, self.pos.y - s, self.pos.x + s, self.pos.y + s);
+    }
+
     pub(crate) fn new(start_region: &Rc<RefCell<Region>>) -> Player {
         Player {
             pos: Vector2::zero(),
@@ -127,6 +153,63 @@ impl Player {
             region: start_region.clone(),
             has_flash_light: false,
             portals: [None, None],
+            bounding_box: LineSegment2::new_square(0.0, 0.0, 0.0, 0.0),
+            id: 0
         }
+    }
+}
+
+pub(crate) trait WorldThing {
+    fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult;
+    fn get_id(&self) -> u64;
+}
+
+impl WorldThing for Player {
+    fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult {
+        let empty = HitResult::empty(&self.region, origin, direction);
+        if origin.subtract(&self.pos).length() < (PLAYER_SIZE / 2.0)  {
+            return empty;
+        }
+
+        let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
+
+        let mut shortest_hit_distance = f64::INFINITY;
+        let mut closest_hit_point = Vector2::NAN;
+        let mut hit_side = None;
+
+        for side in &self.bounding_box {
+            let hit = side.intersection(&ray);
+            let to_hit = origin.subtract(&hit);
+            if !hit.is_nan() && to_hit.length() < shortest_hit_distance {
+                hit_side = Some(side);
+                shortest_hit_distance = to_hit.length();
+                closest_hit_point = hit;
+            }
+        }
+
+        match hit_side {
+            None => {
+                empty
+            }
+            Some(hit_side) => {
+                HitResult {
+                    region: Rc::downgrade(&self.region),
+                    line: LineSegment2::of(origin, closest_hit_point),
+                    kind: HitKind::Player {
+                        box_side: hit_side.clone()
+                    }
+                }
+            }
+        }
+    }
+
+    fn get_id(&self) -> u64 {
+        self.id
+    }
+}
+
+impl Debug for dyn WorldThing {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WorldThing")
     }
 }

@@ -242,6 +242,23 @@ impl LineSegment2 {
         reduce(&mut a, &mut b);
         Vector2::of(a[2], b[2])
     }
+
+    pub(crate) fn new_square(x1: f64, y1: f64, x2: f64, y2: f64) -> [LineSegment2; 4] {
+        // Since we're using the canvas coordinate system, down is positive y.
+        let (x1, x2) = (x1.max(x2), x1.min(x2));
+        let (y1, y2) = (y1.min(y2), y1.max(y2));
+
+        return [
+            // Top
+            LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x2, y1)),
+            // Bottom
+            LineSegment2::of(Vector2::of(x1, y2), Vector2::of(x2, y2)),
+            // Left
+            LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2)),
+            // Right
+            LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2))
+        ]
+    }
 }
 
 
