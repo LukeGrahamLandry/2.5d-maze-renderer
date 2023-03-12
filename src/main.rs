@@ -19,9 +19,13 @@ mod mth;
 pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
+    sdl_context.mouse().show_cursor(false);
+    sdl_context.mouse().capture(true);
+    sdl_context.mouse().set_relative_mouse_mode(true);
     let window = video_subsystem
         .window("walls", 800, 600)
         .position_centered()
+        .input_grabbed()
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -42,6 +46,7 @@ pub fn run() -> Result<(), String> {
     let mut start = Instant::now();
 
     'mainloop: loop {
+        let mut delta_mouse = 0;
         for event in events.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -55,6 +60,10 @@ pub fn run() -> Result<(), String> {
 
                 Event::MouseButtonDown { x, y, mouse_btn, .. } => {
                     world.on_mouse_click(mouse_btn);
+                },
+
+                Event::MouseMotion { xrel, yrel, .. } => {
+                    delta_mouse += xrel;
                 }
                 _ => {}
             }
@@ -68,15 +77,13 @@ pub fn run() -> Result<(), String> {
         let sleep_time = std::time::Duration::from_millis(40);
         thread::sleep(sleep_time);
 
-        let mouse_pos = Vector2::of(events.mouse_state().x() as f64, events.mouse_state().y() as f64);
-
-        world.update(duration, &keys);
+        world.update(duration, &keys, delta_mouse);
 
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
 
         if first_person_rendering {
-            camera::render3d(&world, &mut canvas, duration, &mouse_pos);
+            camera::render3d(&world, &mut canvas, duration);
         } else {
             camera::render2d(&world, &mut canvas, duration);
         }

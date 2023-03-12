@@ -79,7 +79,7 @@ impl Vector2 {
     // Get this vector's angle around the unit circle.
     pub(crate) fn angle(&self) -> f64 {
         let a = self.normalize().dot(&Vector2::of(1.0, 0.0)).acos();
-        if self.x >= 0.0 {
+        if self.y >= 0.0 {
             a
         } else {
             -a

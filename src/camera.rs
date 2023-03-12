@@ -50,6 +50,10 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let x = (x - half_player_size + i) as f64;
         canvas.draw_line(Vector2::of(x, (y - half_player_size) as f64).sdl(), Vector2::of(x, (y + half_player_size) as f64).sdl()).unwrap();
     }
+
+    // Draw look direction.
+    canvas.set_draw_color(Color::RGB(255, 0, 0));
+    canvas.draw_line(world.player.pos.sdl(), world.player.pos.add(&world.player.look_direction.scale(half_player_size as f64)).sdl()).unwrap();
 }
 
 fn draw_wall_2d(canvas: &mut WindowCanvas, wall: &Wall, contains_the_player: bool) {
@@ -88,7 +92,7 @@ fn draw_ray_segment_2d(canvas: &mut WindowCanvas, segment: &HitResult) {
     }
 }
 
-pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64, mouse_pos: &Vector2){
+pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
     for x in 0..(SCREEN_WIDTH as i32) {
         let look_direction = ray_direction_for_x(x, &world.player.look_direction);
         let segments = ray_trace(world.player.pos, look_direction, &world.player.region);

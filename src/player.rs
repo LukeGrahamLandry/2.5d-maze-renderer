@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::f64::consts::PI;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
@@ -9,22 +10,21 @@ use crate::world::{Region, Wall};
 pub(crate) struct Player {
     pub(crate) pos: Vector2,
     pub(crate) look_direction: Vector2,
-    pub(crate) speed: f64,
+    pub(crate) move_direction: Vector2,
     pub(crate) region: Rc<RefCell<Region>>,
     pub(crate) has_flash_light: bool,
     pub(crate) portals: [Option<Rc<RefCell<Wall>>>; 2],
 }
 
-const MOVE_SPEED: f64 = 200.0;
-const TURN_SPEED: f64 = 0.1;
+const MOVE_SPEED: f64 = 100.0;
+const TURN_SPEED: f64 = 0.002;
 impl Player {
-    pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Rc<RefCell<Region>>>, delta_time: f64) {
-        if self.update_direction(pressed) {
-            let move_direction = self.look_direction.scale(self.speed.signum());
-            let move_direction = self.handle_collisions(regions, move_direction);
+    pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Rc<RefCell<Region>>>, delta_time: f64, delta_mouse: i32) {
+        if self.update_direction(pressed, delta_mouse) {
+            let move_direction = self.handle_collisions(regions, self.move_direction);
 
-            self.pos.x += move_direction.x * delta_time * self.speed.abs();
-            self.pos.y += move_direction.y * delta_time * self.speed.abs();
+            self.pos.x += move_direction.x * delta_time * MOVE_SPEED;
+            self.pos.y += move_direction.y * delta_time * MOVE_SPEED;
         }
     }
 
@@ -52,13 +52,9 @@ impl Player {
                 let hit_pos = wall.line.intersection(&ray);
                 let t = wall.line.t_of(&hit_pos).abs();
                 let hit_edge = t < 0.01 || t > 0.99;
-                if hit_edge {
-                    return move_direction;
-                }
-
                 let hit_back = wall.normal.dot(&move_direction) > 0.0;
 
-                if wall.next_wall.is_none() || hit_back {
+                if wall.next_wall.is_none() || hit_back || hit_edge {
                     move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
                 } else {
                     let next_wall = wall.next_wall.as_ref().unwrap().upgrade().unwrap();
@@ -80,22 +76,22 @@ impl Player {
         }
     }
 
-    fn update_direction(&mut self, pressed: &Vec<Keycode>) -> bool {
-        self.speed = 0.0;
+    fn update_direction(&mut self, pressed: &Vec<Keycode>, delta_mouse: i32) -> bool {
+        let mut relative_move_direction = Vector2::zero();
         self.has_flash_light = false;
         for key in pressed {
             match key {
                 Keycode::W => {
-                    self.speed += MOVE_SPEED;
+                    relative_move_direction.y = 1.0;
                 }
                 Keycode::S => {
-                    self.speed -= MOVE_SPEED;
+                    relative_move_direction.y = -1.0;
                 }
                 Keycode::A => {
-                    self.look_direction = self.look_direction.rotate(-TURN_SPEED);
+                    relative_move_direction.x = 1.0;
                 }
                 Keycode::D => {
-                    self.look_direction = self.look_direction.rotate(TURN_SPEED);
+                    relative_move_direction.x = -1.0;
                 },
                 Keycode::F => {
                     self.has_flash_light = true;
@@ -104,7 +100,21 @@ impl Player {
             }
         }
 
-        self.speed != 0.0
+        let move_angle = relative_move_direction.normalize().angle() - (PI / 2.0);
+        self.look_direction = self.look_direction.rotate(delta_mouse as f64 * TURN_SPEED);
+        self.move_direction = self.look_direction.rotate(move_angle);
+
+        !relative_move_direction.is_zero()
+    }
+
+    pub(crate) fn clear_portal(&mut self, portal_index: usize) {
+        match self.portals[portal_index].as_mut() {
+            None => {}
+            Some(portal) => {
+                portal.borrow_mut().region.upgrade().unwrap().borrow_mut().remove_wall(&portal);
+            }
+        }
+        self.portals[portal_index] = None;
     }
 }
 
@@ -113,7 +123,7 @@ impl Player {
         Player {
             pos: Vector2::zero(),
             look_direction: Vector2::of(0.0, -1.0),
-            speed: 0.0,
+            move_direction: Vector2::zero(),
             region: start_region.clone(),
             has_flash_light: false,
             portals: [None, None],

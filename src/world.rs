@@ -15,8 +15,8 @@ pub struct World {
 }
 
 impl World {
-    pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>){
-        self.player.update(&pressed, &self.regions, delta_time);
+    pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
+        self.player.update(&pressed, &self.regions, delta_time, delta_mouse);
     }
 
     pub(crate) fn on_mouse_click(&mut self, mouse_button: MouseButton) {
@@ -44,6 +44,10 @@ impl World {
                     }
                     MouseButton::Right => {
                         self.place_portal(new_portal, 1, 0);
+                    }
+                    MouseButton::Middle => {
+                        self.player.clear_portal(0);
+                        self.player.clear_portal(1);
                     }
                     _ => { return; }
                 }
@@ -94,16 +98,7 @@ impl World {
     }
     fn place_portal(&mut self, new_portal: Rc<RefCell<Wall>>, replacing_index: usize, connecting_index: usize) {
         // If the player already had a portal placed in this slot, remove it.
-        match &self.player.portals[replacing_index] {
-            None => {}
-            Some(replacing_portal) => {
-                let replacing_portal_wall = replacing_portal.borrow();
-                let region = replacing_portal_wall.region.upgrade().unwrap();
-                let mut region = region.borrow_mut();
-
-                region.remove_wall(&replacing_portal);
-            }
-        }
+        self.player.clear_portal(replacing_index);
 
         // Put the new portal in the player's slot.
         self.player.portals[replacing_index] = Some(new_portal.clone());
