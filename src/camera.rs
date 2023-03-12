@@ -23,7 +23,7 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     let mut i = 0;
     for region in world.regions.iter() {
         for wall in region.borrow().walls.iter() {
-            let contains_player = world.player.region.ptr_eq(&Rc::downgrade(region));
+            let contains_player = Rc::ptr_eq(&world.player.region, region);
             draw_wall_2d(canvas, &wall.borrow(), contains_player);
         }
 
@@ -169,7 +169,7 @@ pub(crate) fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 
 }
 
 /// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Weak<RefCell<Region>>) -> Vec<HitResult> {
+pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Rc<RefCell<Region>>) -> Vec<HitResult> {
     let mut segments = vec![];
 
     let mut segment = single_ray_trace(origin, direction, region);
@@ -197,7 +197,7 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &We
                         direction = Wall::rotate(direction, &wall, &new_wall);
 
                         segments.push(segment);
-                        segment = single_ray_trace(origin.add(&direction), direction, &new_wall.region);
+                        segment = single_ray_trace(origin.add(&direction), direction, &new_wall.region.upgrade().unwrap());
                     }
                 }
             }
@@ -209,16 +209,16 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &We
 }
 
 /// Sends a ray through a single region until it hits a wall.
-fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Weak<RefCell<Region>>) -> HitResult {
+fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Region>>) -> HitResult {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
     let mut shortest_hit_distance = f64::INFINITY;
     let mut closest_hit_point = Vector2::NAN;
     let mut hit_wall = None;
 
-    let r = &region.upgrade().unwrap();
-    let r = r.borrow();
-    for wall in &r.walls {
+
+    let m_region = region.borrow();
+    for wall in &m_region.walls {
         let hit = wall.borrow().line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
 
@@ -232,14 +232,14 @@ fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Weak<RefCell<R
     match hit_wall {
         None => {
             HitResult {
-                region: region.clone(),
+                region: Rc::downgrade(region),
                 hit_wall: None,
                 line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
             }
         }
         Some(hit_wall) => {
             HitResult {
-                region: region.clone(),
+                region: Rc::downgrade(region),
                 hit_wall: Some(Rc::downgrade(&hit_wall)),
                 line: LineSegment2::of(origin, closest_hit_point)
             }

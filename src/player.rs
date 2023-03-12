@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
 
@@ -9,9 +10,9 @@ pub(crate) struct Player {
     pub(crate) pos: Vector2,
     pub(crate) look_direction: Vector2,
     pub(crate) speed: f64,
-    pub(crate) region: Weak<RefCell<Region>>,
+    pub(crate) region: Rc<RefCell<Region>>,
     pub(crate) has_flash_light: bool,
-    pub(crate) portals: [Option<Weak<RefCell<Wall>>>; 2],
+    pub(crate) portals: [Option<Rc<RefCell<Wall>>>; 2],
 }
 
 const MOVE_SPEED: f64 = 200.0;
@@ -29,42 +30,54 @@ impl Player {
 
     pub(crate) fn handle_collisions(&mut self, regions: &Vec<Rc<RefCell<Region>>>, mut move_direction: Vector2) -> Vector2 {
         let player_size = 11.0;
-        let last_region = self.region.upgrade().unwrap();
-        for wall in last_region.borrow().walls.iter() {
-            let wall = wall.borrow();
-            let ray = LineSegment2::from(self.pos, move_direction.scale(player_size));
-            let hit_pos = wall.line.intersection(&ray);
-            let t = wall.line.t_of(&hit_pos).abs();
-            let hit_edge = t < 0.01 || t > 0.99;
+        let ray = LineSegment2::from(self.pos, move_direction.scale(player_size));
 
-            if !hit_pos.is_nan() {
+
+        let mut wall = None;
+        let region = self.region.clone();
+        let m_region = region.borrow();
+        for check_wall in m_region.walls.iter() {
+            let hit_pos = check_wall.borrow().line.intersection(&ray);
+            if !hit_pos.is_nan(){
+                wall = Some(check_wall);
+            }
+        }
+
+        match wall {
+            None => {
+                move_direction
+            }
+            Some(wall) => {
+                let wall = wall.borrow();
+                let hit_pos = wall.line.intersection(&ray);
+                let t = wall.line.t_of(&hit_pos).abs();
+                let hit_edge = t < 0.01 || t > 0.99;
                 if hit_edge {
-                    return Vector2::zero();
+                    return move_direction;
                 }
 
                 let hit_back = wall.normal.dot(&move_direction) > 0.0;
+
                 if wall.next_wall.is_none() || hit_back {
                     move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
                 } else {
-                    let next_wall = wall.next_wall.as_ref().unwrap();
-                    self.region = next_wall.upgrade().unwrap().borrow().region.clone();
-                    let new_wall = next_wall.upgrade().unwrap();
-                    let new_wall = &new_wall.borrow();
-                    self.pos = Wall::translate(self.pos, &wall, &new_wall);
-                    self.look_direction = Wall::rotate(self.look_direction, &wall, &new_wall);
-                    move_direction = Wall::rotate(move_direction, &wall, &new_wall);
+                    let next_wall = wall.next_wall.as_ref().unwrap().upgrade().unwrap();
+                    let next_region = next_wall.borrow().region.clone();
+                    self.region = next_region.upgrade().unwrap().clone();
+                    let next_wall = next_wall.borrow();
+                    self.pos = Wall::translate(self.pos, &wall, &next_wall);
+                    self.look_direction = Wall::rotate(self.look_direction, &wall, &next_wall);
+                    move_direction = Wall::rotate(move_direction, &wall, &next_wall);
                     self.pos = self.pos.add(&move_direction);
                 }
 
                 if move_direction.length() > 0.1 {
-                    return self.handle_collisions(regions, move_direction);
+                    self.handle_collisions(regions, move_direction)
                 } else {
-                    break;
+                    move_direction
                 }
             }
         }
-
-        move_direction
     }
 
     fn update_direction(&mut self, pressed: &Vec<Keycode>) -> bool {
@@ -101,7 +114,7 @@ impl Player {
             pos: Vector2::zero(),
             look_direction: Vector2::of(0.0, -1.0),
             speed: 0.0,
-            region: Rc::downgrade(start_region),
+            region: start_region.clone(),
             has_flash_light: false,
             portals: [None, None],
         }

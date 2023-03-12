@@ -97,27 +97,23 @@ impl World {
         match &self.player.portals[replacing_index] {
             None => {}
             Some(replacing_portal) => {
-                let replacing_portal_wall = replacing_portal.upgrade().unwrap();
-                let replacing_portal_wall = replacing_portal_wall.borrow();
+                let replacing_portal_wall = replacing_portal.borrow();
                 let region = replacing_portal_wall.region.upgrade().unwrap();
                 let mut region = region.borrow_mut();
 
                 region.remove_wall(&replacing_portal);
-                self.player.portals[replacing_index] = None;
             }
         }
 
         // Put the new portal in the player's slot.
-        self.player.portals[replacing_index] = Some(Rc::downgrade(&new_portal));
+        self.player.portals[replacing_index] = Some(new_portal.clone());
 
         // If there's a portal in the other slot, connect them.
         match &self.player.portals[connecting_index] {
             None => {}
             Some(connecting_portal) => {
-                new_portal.borrow_mut().next_wall = Some(connecting_portal.clone());
-                let connecting_portal = connecting_portal.upgrade().unwrap();
-                let mut connecting_portal = connecting_portal.borrow_mut();
-                connecting_portal.next_wall = Some(Rc::downgrade(&new_portal));
+                new_portal.borrow_mut().next_wall = Some(Rc::downgrade(connecting_portal));
+                connecting_portal.borrow_mut().next_wall = Some(Rc::downgrade(&new_portal));
             }
         }
 
@@ -137,10 +133,10 @@ pub(crate) struct Region {
 }
 
 impl Region {
-    pub(crate) fn remove_wall(&mut self, wall: &Weak<RefCell<Wall>>){
+    pub(crate) fn remove_wall(&mut self, wall: &Rc<RefCell<Wall>>){
         let mut to_remove = None;
         for (i, w) in self.walls.iter().enumerate() {
-            if Rc::downgrade(w).ptr_eq(wall) {
+            if Rc::ptr_eq(wall, w) {
                 to_remove = Some(i);
                 break;
             }
