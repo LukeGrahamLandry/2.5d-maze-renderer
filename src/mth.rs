@@ -90,6 +90,10 @@ impl Vector2 {
         }
     }
 
+    pub(crate) fn reflect(&self, normal: &Vector2) -> Vector2 {
+        self.subtract(&normal.scale(2.0 * self.dot(normal)))
+    }
+
     pub(crate) fn is_nan(&self) -> bool {
         self.x.is_nan() || self.y.is_nan()
     }

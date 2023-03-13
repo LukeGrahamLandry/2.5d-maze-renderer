@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use sdl2::pixels::Color;
 use maze;
+use crate::material::{Colour, ColumnLight};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 use crate::world::{Region, World, Wall};
@@ -44,6 +46,12 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Rc<RefCe
         for wall in walls {
             m_region.walls.push(Wall::new(wall, wall.normal(), &region))
         }
+        let light_pos = Vector2::of((cell_size / 2) as f64, (cell_size / 2) as f64);
+        m_region.lights.push(ColumnLight {
+            pos: light_pos,
+            intensity: Colour::white()
+        });
+        m_region.floor_color = Color::RGB(100, 100, 150);
     }
 
     vec![region]

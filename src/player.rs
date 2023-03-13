@@ -4,7 +4,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
-use crate::camera::{HitKind, HitResult, VIEW_DIST};
+use crate::material::Material;
+use crate::ray::{HitKind, HitResult, VIEW_DIST};
 
 use crate::mth::{LineSegment2, Vector2};
 use crate::world::{Region, Wall};
@@ -17,7 +18,8 @@ pub(crate) struct Player {
     pub(crate) has_flash_light: bool,
     pub(crate) portals: [Option<Rc<RefCell<Wall>>>; 2],
     pub(crate) bounding_box: [LineSegment2; 4],
-    pub(crate) id: u64
+    pub(crate) id: u64,
+    pub(crate) material: Material
 }
 
 const MOVE_SPEED: f64 = 100.0;
@@ -154,7 +156,8 @@ impl Player {
             has_flash_light: false,
             portals: [None, None],
             bounding_box: LineSegment2::new_square(0.0, 0.0, 0.0, 0.0),
-            id: 0
+            id: 0,
+            material: Material::new(1.0, 0.0, 0.0)
         }
     }
 }

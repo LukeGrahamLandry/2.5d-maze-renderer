@@ -6,7 +6,9 @@ use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
-use crate::camera::{HitKind, HitResult, ray_direction_for_x, ray_trace, SCREEN_WIDTH};
+use crate::camera::{ray_direction_for_x, SCREEN_WIDTH};
+use crate::ray::{HitKind, HitResult, ray_trace};
+use crate::material::{Material, ColumnLight, Colour};
 
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::{Player, WorldThing};
@@ -140,8 +142,7 @@ impl World {
 pub(crate) struct Region {
     pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
     pub(crate) floor_color: Color,
-    pub(crate) light_pos: Vector2,
-    pub(crate) light_intensity: f64,
+    pub(crate) lights: Vec<ColumnLight>,
     pub(crate) things: HashMap<u64, Weak<RefCell<dyn WorldThing>>>
 }
 
@@ -167,8 +168,7 @@ impl Region {
         Rc::new(RefCell::new(Region {
             walls: vec![],
             floor_color: Color::RGB(0, 0, 0),
-            light_pos: Vector2::zero(),
-            light_intensity: 1.0,
+            lights: vec![],
             things: HashMap::with_capacity(1)
         }))
     }
@@ -185,11 +185,16 @@ impl Region {
             m_region.walls.push(Wall::new(walls[3], walls[3].normal().negate(), &region));
 
             // Put a light somewhere random so I can see the shading
-            m_region.light_pos = {
+            let light = {
                 let wall0 = m_region.walls[0].borrow();
                 let wall2 = m_region.walls[2].borrow();
-                wall0.line.a.add(&wall0.line.direction().scale(-0.25).add(&wall2.line.direction().scale(-0.25)))
-            }
+                let pos = wall0.line.a.add(&wall0.line.direction().scale(-0.25).add(&wall2.line.direction().scale(-0.25)));
+                ColumnLight {
+                    pos,
+                    intensity: Colour::white()
+                }
+            };
+            m_region.lights.push(light);
         }
 
         region
@@ -201,7 +206,8 @@ pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
     pub(crate) region: Weak<RefCell<Region>>,
-    pub(crate) next_wall: Option<Weak<RefCell<Wall>>>
+    pub(crate) next_wall: Option<Weak<RefCell<Wall>>>,
+    pub(crate) material: Material
 }
 
 impl Wall {
@@ -211,6 +217,7 @@ impl Wall {
             next_wall: None,
             normal,
             line,
+            material: Material::new(0.2, 0.8, 0.2)
         };
         Rc::new(RefCell::new(wall))
     }

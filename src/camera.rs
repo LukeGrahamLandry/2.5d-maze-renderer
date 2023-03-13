@@ -3,16 +3,16 @@ use std::f64::consts::PI;
 use std::rc::{Rc, Weak};
 use sdl2::pixels::Color;
 use sdl2::render::WindowCanvas;
+use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
+use crate::ray::{HitKind, HitResult, ray_trace};
 
 use crate::world::{Region, Wall, World};
 
 const FOV_DEG: i32 = 45;
-pub const VIEW_DIST: f64 = 1000.0;
 const SCREEN_HEIGHT: f64 = 600.0;
 pub const SCREEN_WIDTH: u32 = 800;
-const PORTAL_LIMIT: u16 = 15;
 
 pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
     let half_player_size = 5;
@@ -28,14 +28,20 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         }
 
         // Draw light
-        canvas.set_draw_color(Color::RGB(255, 0, 0));
-        canvas.draw_point(region.borrow().light_pos.sdl()).unwrap();
+        for light in &region.borrow().lights {
+            canvas.set_draw_color(light.intensity.sdl());
+            canvas.draw_point(light.pos.sdl()).unwrap();
+        }
 
         i += 1;
     }
 
     // Draw view rays.
     for x in 0..(SCREEN_WIDTH as i32) {
+        if x % 15 != 0 {
+            continue;
+        }
+
         let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
         let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
 
@@ -119,10 +125,10 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, length: f64, s
     canvas.draw_line(Vector2::of(screen_x as f64, bottom).sdl(), Vector2::of(screen_x as f64, top).sdl()).unwrap();
 }
 
-fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, player_look_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
+fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     let hit_point = hit.line.b;
     let wall_normal = match &hit.kind {
-        HitKind::None { .. } => { player_look_direction }
+        HitKind::None { .. } => { ray_direction }
         HitKind::Wall { hit_wall, .. } => {
             hit_wall.upgrade().unwrap().borrow().normal
         }
@@ -131,37 +137,35 @@ fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, pla
         }
     };
 
-    let (mut red, mut green, mut blue) = wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &player, screen_x);
-
-    match &hit.kind {
-        HitKind::None => {}
-        HitKind::Wall { .. } => {}
-        HitKind::Player { .. } => {
-            (red, green, blue) = (255, 0, 0);
+    let material = match &hit.kind {
+        HitKind::None { .. } => { Material::new(0.0, 0.0, 0.0) }
+        HitKind::Wall { hit_wall, .. } => {
+            hit_wall.upgrade().unwrap().borrow().material
         }
-    }
+        HitKind::Player { box_side, .. } => {
+            player.material
+        }
+    };
 
+    let colour= wall_column_lighting(&hit.region.upgrade().unwrap().borrow(), &hit_point, &wall_normal, &material, player, ray_direction, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
-    canvas.set_draw_color(Color::RGB(red, green, blue));
+    canvas.set_draw_color(colour.sdl());
     canvas.draw_line(Vector2::of(screen_x as f64, top).sdl(), Vector2::of(screen_x as f64, bottom).sdl()).unwrap();
 }
 
-/// Returns the colour of a certain point on the wall.
-fn wall_column_lighting(region: &Region, hit_point: &Vector2, wall_normal: &Vector2, player: &Player, x: i32) -> (u8, u8, u8) {
-    let to_light = region.light_pos.subtract(&hit_point).normalize();
-    let world_light_factor = wall_normal.dot(&to_light).abs() * region.light_intensity;
 
+fn wall_column_lighting(region: &Region, hit_point: &Vector2, wall_normal: &Vector2, material: &Material, player: &Player, ray_direction: Vector2, x: i32) -> Colour {
     let is_in_middle_half = (x - SCREEN_WIDTH as i32 / 2).abs() < (SCREEN_WIDTH as i32 / 4);
-    let flash_light_factor = if player.has_flash_light && is_in_middle_half{
-        let imaginary_light = player.pos.clone();
-        let to_light = imaginary_light.subtract(&hit_point);
-        wall_normal.dot(&to_light).abs()
-    } else { 0.0 };
+    let has_flash_light = player.has_flash_light && is_in_middle_half;
 
-    let total_color_factor = world_light_factor + (flash_light_factor / 200.0);
-    let full_color = (30.0 + (200.0 * total_color_factor)).min(255.0) as u8;
-    ((10.0 * flash_light_factor) as u8, full_color, 0)
+    let mut colour = Colour::black();
+    let to_eye = ray_direction.negate().normalize();
+    for light in &region.lights {
+        colour = colour.add(material.lighting(&light, hit_point, wall_normal, &to_eye));
+    }
+
+    colour
 }
 
 /// Converts a (distance to a wall) into a top and bottom y to draw that wall on the canvas.
@@ -184,123 +188,3 @@ pub(crate) fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 
     forwards.rotate(delta_rad)
 }
 
-/// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Rc<RefCell<Region>>) -> Vec<HitResult> {
-    let mut segments = vec![];
-
-    let mut segment = single_ray_trace(origin, direction, region);
-    for _ in 0..PORTAL_LIMIT {
-        match &segment.kind {
-            HitKind::None { .. }
-             | HitKind::Player { .. } => { break; }
-            HitKind::Wall { hit_wall, .. } => {
-                let wall = hit_wall.upgrade().unwrap();
-                let wall = wall.borrow();
-
-                match &wall.next_wall {
-                    None => { break; }
-                    Some(new_wall) => {
-                        let t = wall.line.t_of(&segment.line.b).abs();
-                        let hit_back = wall.normal.dot(&direction) > 0.0;
-                        let hit_edge = t < 0.01 || t > 0.99;
-                        if hit_back || hit_edge {
-                            break;
-                        }
-
-                        // Go through the portal
-                        let new_wall = new_wall.upgrade().unwrap();
-                        let new_wall = new_wall.borrow();
-                        origin = Wall::translate(segment.line.b, &wall, &new_wall);
-                        direction = Wall::rotate(direction, &wall, &new_wall);
-
-                        segments.push(segment);
-                        segment = single_ray_trace(origin.add(&direction), direction, &new_wall.region.upgrade().unwrap());
-                    }
-                }
-            }
-        }
-    }
-
-    segments.push(segment);
-    segments
-}
-
-/// Sends a ray through a single region until it hits a wall.
-fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Region>>) -> HitResult {
-    let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
-
-    let mut shortest_hit_distance = f64::INFINITY;
-    let mut closest_hit_point = Vector2::NAN;
-    let mut hit_wall = None;
-
-    let m_region = region.borrow();
-    for wall in &m_region.walls {
-        let hit = wall.borrow().line.intersection(&ray);
-        let to_hit = origin.subtract(&hit);
-
-        if !hit.is_nan() && to_hit.length() < shortest_hit_distance {
-            hit_wall = Some(wall);
-            shortest_hit_distance = to_hit.length();
-            closest_hit_point = hit;
-        }
-    }
-
-    let mut hit_result = match hit_wall {
-        None => {
-            HitResult {
-                region: Rc::downgrade(region),
-                line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
-                kind: HitKind::None
-            }
-        }
-        Some(hit_wall) => {
-            HitResult {
-                region: Rc::downgrade(region),
-                line: LineSegment2::of(origin, closest_hit_point),
-                kind: HitKind::Wall {
-                    hit_wall: Rc::downgrade(&hit_wall)
-                }
-            }
-        }
-    };
-
-    for (_id, thing) in &m_region.things {
-        let hit = thing.upgrade().unwrap().borrow().collide(origin, direction);
-        if hit.dist() < hit_result.dist() {
-            hit_result = hit;
-        }
-    }
-
-    hit_result
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct HitResult {
-    pub(crate) region: Weak<RefCell<Region>>,
-    pub(crate) line: LineSegment2,
-    pub(crate) kind: HitKind
-}
-
-impl HitResult {
-    pub(crate) fn empty(region: &Rc<RefCell<Region>>, origin: Vector2, direction: Vector2) -> HitResult {
-        HitResult  {
-            region: Rc::downgrade(region),
-            line: LineSegment2::of(origin, origin.add(&direction)),
-            kind: HitKind::None
-        }
-    }
-
-    fn dist(&self) -> f64 {
-        match self.kind {
-            HitKind::None => { f64::INFINITY }
-            HitKind::Wall { .. } | HitKind::Player { .. } => { self.line.length() }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum HitKind {
-    None,
-    Wall { hit_wall: Weak<RefCell<Wall>> },
-    Player { box_side: LineSegment2 }
-}
