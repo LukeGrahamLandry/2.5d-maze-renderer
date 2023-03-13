@@ -16,12 +16,14 @@ mod player;
 mod camera;
 mod mth;
 
+
 pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
     sdl_context.mouse().show_cursor(false);
     sdl_context.mouse().capture(true);
     sdl_context.mouse().set_relative_mouse_mode(true);
+
     let window = video_subsystem
         .window("walls", 800, 600)
         .position_centered()

@@ -1,0 +1,15 @@
+[package]
+name = "maze"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "maze"
+path = "src/lib.rs"
+
+[[bin]]
+name = "maze_main"
+path = "src/main.rs"
+
+[dependencies]
+fastrand = "1.9.0"
