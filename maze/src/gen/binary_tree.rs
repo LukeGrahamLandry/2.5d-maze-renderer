@@ -1,6 +1,7 @@
-use crate::Cell;
 use crate::grid::{Grid, Pos};
 
+/// For each cell, randomly choose either north or east to connect.
+/// Be careful not to go out of bounds on the north and east edges.
 pub fn on(grid: &mut Grid) {
     let mut near: Vec<Pos> = Vec::with_capacity(2);
     for row in 0..grid.rows {

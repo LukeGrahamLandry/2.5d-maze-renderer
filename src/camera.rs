@@ -160,7 +160,7 @@ fn wall_column_lighting(region: &Region, hit_point: &Vector2, wall_normal: &Vect
     } else { 0.0 };
 
     let total_color_factor = world_light_factor + (flash_light_factor / 200.0);
-    let full_color = (10.0 + (200.0 * total_color_factor)).min(255.0) as u8;
+    let full_color = (30.0 + (200.0 * total_color_factor)).min(255.0) as u8;
     ((10.0 * flash_light_factor) as u8, full_color, 0)
 }
 

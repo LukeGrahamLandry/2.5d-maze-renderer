@@ -22,8 +22,8 @@ impl World {
     }
 
     pub(crate) fn on_mouse_click(&mut self, mouse_button: MouseButton) {
+        let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.borrow().look_direction);
         let hit: HitResult = {
-            let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.borrow().look_direction);
             let segments = ray_trace(self.player.borrow().pos, direction , &self.player.borrow().region);
             segments.last().unwrap().clone()
         };
@@ -36,9 +36,15 @@ impl World {
                     let hit_wall = hit_wall.upgrade().unwrap();
                     let hit_wall = hit_wall.borrow();
                     let half_portal_direction = hit_wall.line.direction().normalize().scale(10.0);
-                    let start_point = hit.line.b.add(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
-                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&hit_wall.normal.scale(10.0));
-                    Wall::new(LineSegment2::of(start_point, end_point), hit_wall.normal, &hit_wall.region.upgrade().unwrap())
+                    let normal = if direction.dot(&hit_wall.normal) < 0.0 {
+                        hit_wall.normal
+                    } else {
+                        hit_wall.normal.negate()
+                    };
+                    let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(10.0));
+                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(10.0));
+
+                    Wall::new(LineSegment2::of(start_point, end_point), normal, &hit_wall.region.upgrade().unwrap())
                 };  // Drop the borrow of the hit_wall, incase the ray tracing ran out of depth at a portal. Lets us re-borrow in place_portal.
 
                 match mouse_button {
@@ -157,7 +163,7 @@ impl Region {
         }
     }
 
-    fn new() -> Rc<RefCell<Region>> {
+    pub(crate) fn new() -> Rc<RefCell<Region>> {
         Rc::new(RefCell::new(Region {
             walls: vec![],
             floor_color: Color::RGB(0, 0, 0),

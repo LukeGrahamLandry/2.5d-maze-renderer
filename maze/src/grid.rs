@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::ptr::write;
 
 pub struct Grid {
     pub rows: i32,
@@ -53,12 +52,6 @@ impl Grid {
         }
     }
 
-    pub fn link(&mut self, a: Pos, b: Pos) {
-        let a = self.mut_cell(a);
-        let b = self.mut_cell(b);
-        panic!("not impl");
-    }
-
     pub fn north(&self, pos: Pos) -> Pos {
         Pos::of(pos.row - 1, pos.col)
     }
@@ -100,7 +93,9 @@ impl Grid {
 
 impl Display for Grid {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut result = String::with_capacity((2 + (4 * self.cols)) as usize);
+        let chars_per_row = 2 + (4 * self.cols) as usize;
+        let total_chars = chars_per_row * self.rows as usize;
+        let mut result = String::with_capacity(total_chars);
 
         // The top row
         result.push('+');
@@ -110,9 +105,9 @@ impl Display for Grid {
         result.push('\n');
 
         for row in 0..self.rows {
-            let mut top = String::with_capacity((2 + (4 * self.cols)) as usize);
+            let mut top = String::with_capacity(chars_per_row);
             top.push('+');
-            let mut bottom = String::with_capacity((2 + (4 * self.cols)) as usize);
+            let mut bottom = String::with_capacity(chars_per_row);
             bottom.push('|');
             for col in 0..self.cols {
                 let pos = Pos::of(row, col);
