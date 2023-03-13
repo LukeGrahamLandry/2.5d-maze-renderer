@@ -8,6 +8,10 @@ pub(crate) struct Colour {
 }
 
 impl Colour {
+    pub(crate) fn rgb(r: u8, g: u8, b: u8) -> Colour {
+        Colour::new(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0)
+    }
+
     pub(crate) fn black() -> Colour {
         Colour::new(0.0, 0.0, 0.0)
     }
@@ -30,6 +34,19 @@ impl Colour {
 
     pub(crate) fn multiply(&self, other: Colour) -> Colour {
         Colour::new(self.r * other.r, self.g * other.g, self.b * other.b)
+    }
+
+    pub(crate) fn lerp(&self, other: &Colour, t: f64) -> Colour {
+        Colour::new(
+            Self::lerp_f(self.r, other.r, t),
+            Self::lerp_f(self.g, other.g, t),
+            Self::lerp_f(self.b, other.b, t)
+        )
+    }
+
+    fn lerp_f(a: f64, b: f64, t: f64) -> f64 {
+        let dif = b - a;
+        a + (dif * t)
     }
 
     pub(crate) fn sdl(&self) -> sdl2::pixels::Color {
@@ -55,8 +72,8 @@ impl Material {
             colour: Colour::new(r, g, b),
             ambient: 0.1,
             diffuse: 0.9,
-            specular: 0.9,
-            shininess: 200.0,
+            specular: 0.4,
+            shininess: 50.0,
         }
     }
 
@@ -83,6 +100,15 @@ impl Material {
         }
 
         ambient_colour.add(diffuse_colour).add(specular_colour)
+    }
+
+    pub(crate) fn floor_lighting(&self, light: &ColumnLight, hit_point: Vector2) -> Colour {
+        let base_colour = self.colour.multiply(light.intensity);
+        let ambient_colour = base_colour.scale(self.ambient);
+        let dist_to_light = light.pos.subtract(&hit_point);
+        let diffuse_factor = 50.0 / dist_to_light.length();
+        let diffuse_colour = base_colour.scale(self.diffuse * diffuse_factor);
+        ambient_colour.add(diffuse_colour)
     }
 }
 

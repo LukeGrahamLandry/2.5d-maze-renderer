@@ -46,8 +46,11 @@ impl World {
                     let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(10.0));
                     let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(10.0));
 
-                    Wall::new(LineSegment2::of(start_point, end_point), normal, &hit_wall.region.upgrade().unwrap())
+                    let wall = Wall::new(LineSegment2::of(start_point, end_point), normal, &hit_wall.region.upgrade().unwrap());
+                    wall.borrow_mut().material.colour = Colour::new(0.8, 0.3, 0.3);
+                    wall
                 };  // Drop the borrow of the hit_wall, incase the ray tracing ran out of depth at a portal. Lets us re-borrow in place_portal.
+
 
                 match mouse_button {
                     MouseButton::Left => {
@@ -73,11 +76,9 @@ impl World {
         regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
         regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
 
-        regions[0].borrow_mut().floor_color = Color::RGB(0, 50, 50);
-        regions[1].borrow_mut().floor_color = Color::RGB(0, 50, 0);
-        regions[2].borrow_mut().floor_color = Color::RGB(0, 0, 50);
-        // regions[1].light_intensity = 0.5;
-        // regions[2].light_intensity = 0.01;
+        regions[0].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 50);
+        regions[1].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 0);
+        regions[2].borrow_mut().floor_material.colour = Colour::rgb(0, 0, 50);
 
         let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
         let wall = Wall::new(line, line.normal(), &regions[0]);
@@ -141,7 +142,7 @@ impl World {
 #[derive(Debug)]
 pub(crate) struct Region {
     pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
-    pub(crate) floor_color: Color,
+    pub(crate) floor_material: Material,
     pub(crate) lights: Vec<ColumnLight>,
     pub(crate) things: HashMap<u64, Weak<RefCell<dyn WorldThing>>>
 }
@@ -167,7 +168,7 @@ impl Region {
     pub(crate) fn new() -> Rc<RefCell<Region>> {
         Rc::new(RefCell::new(Region {
             walls: vec![],
-            floor_color: Color::RGB(0, 0, 0),
+            floor_material: Material::new(0.0, 0.0, 0.0),
             lights: vec![],
             things: HashMap::with_capacity(1)
         }))

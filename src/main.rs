@@ -41,7 +41,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = World::create_example();
+    let mut world = random_maze_world();
     let mut first_person_rendering = false;
 
     canvas.clear();

@@ -51,7 +51,7 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Rc<RefCe
             pos: light_pos,
             intensity: Colour::white()
         });
-        m_region.floor_color = Color::RGB(100, 100, 150);
+        m_region.floor_material.colour = Colour::rgb(100, 100, 150);
     }
 
     vec![region]
