@@ -49,6 +49,22 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Rc<RefCe
     vec![region]
 }
 
+pub(crate) fn shift_the_world(world: &mut World){
+    let cell_size = 50;
+
+    let mut grid = maze::Grid::new(10, 10);
+    maze::gen::binary_tree::on(&mut grid);
+    let regions = maze_to_regions(&grid, cell_size);
+
+    let weak_player = Rc::downgrade(&world.player);
+    regions[0].borrow_mut().things.insert(world.player.borrow().id, weak_player);
+    world.player.borrow_mut().region = regions[0].clone();
+    world.player.borrow_mut().clear_portal(0);
+    world.player.borrow_mut().clear_portal(1);
+
+    world.regions = regions;
+}
+
 pub(crate) fn random_maze_world() -> World {
     let cell_size = 50;
 

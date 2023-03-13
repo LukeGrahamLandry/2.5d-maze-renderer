@@ -7,7 +7,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use crate::maze_world::random_maze_world;
+use crate::maze_world::{random_maze_world, shift_the_world};
 use crate::mth::Vector2;
 
 use crate::world::World;
@@ -61,6 +61,9 @@ pub fn run() -> Result<(), String> {
 
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => first_person_rendering = !first_person_rendering,
+
+                Event::KeyDown { keycode: Some(Keycode::R), .. }
+                => shift_the_world(&mut world),
 
                 Event::MouseButtonDown { x, y, mouse_btn, .. } => {
                     world.on_mouse_click(mouse_btn);
