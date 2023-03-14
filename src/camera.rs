@@ -27,10 +27,14 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
             draw_wall_2d(canvas, &wall.borrow(), contains_player);
         }
 
-        // Draw light
+        // Draw lights
+        let s = 3.0;
         for light in &region.borrow().lights {
             canvas.set_draw_color(light.intensity.sdl());
-            canvas.draw_point(light.pos.sdl()).unwrap();
+            let x = light.pos.x;
+            let y = light.pos.y;
+            canvas.draw_line(Vector2::of(x - s, y).sdl(), Vector2::of(x + s, y).sdl()).unwrap();
+            canvas.draw_line(Vector2::of(x, y - s).sdl(), Vector2::of(x, y + s).sdl()).unwrap();
         }
 
         i += 1;
@@ -113,31 +117,61 @@ pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
     }
 }
 
-fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, ray_line: LineSegment2, screen_x: i32, mut cumulative_dist: f64){
-    // The top of the last floor segment is the bottom of this one.
-    let (pixels_drawn, _) = project_to_screen(cumulative_dist);
-    let mut bottom = SCREEN_HEIGHT - pixels_drawn;
-
-    // The top of the floor segment is the bottom of where we'd draw if it was a wall.
+fn draw_floor_segment(canvas: &mut WindowCanvas, region: &Region, ray_line: LineSegment2, screen_x: i32, cumulative_dist: f64){
     let length = ray_line.length();
     let sample_length = 10.0;
-    let sample_count = (length / sample_length) as i32;
-    let mut samples: Vec<Colour> = Vec::with_capacity((sample_count + 1) as usize);
-    for i in 0..(sample_count + 1) {  // make sure we have one past the end to lerp to
-        let t = i as f64 / sample_count as f64;
-        let pos = ray_line.a.add(&ray_line.direction().scale(-t));
+    let sample_count = (length / sample_length).round() as i32 + 1;
 
+    let samples = sample_floor_lighting(region, ray_line, sample_length, sample_count + 1);
+
+    // The top of the last floor segment is the bottom of this one.
+    // The top of the floor segment is the bottom of where we'd draw if it was a wall.
+    let (pixels_drawn, _) = project_to_screen(cumulative_dist);
+    let mut last_top = SCREEN_HEIGHT - pixels_drawn;
+
+    let steps_per_unit = 1.0;
+    let units_per_step = 1.0 / steps_per_unit;
+    let steps_per_sample = (sample_length.round() + 1.0) * steps_per_unit;
+    for s in 0..sample_count {
+        let current = samples[s as usize];
+        let next = samples[(s + 1) as usize];
+
+        for i in 0..(steps_per_sample as i32) {
+            let dist = cumulative_dist + (s as f64 * sample_length) + (i as f64 * units_per_step);
+            let (_, top) = project_to_screen(dist);
+            let bottom = last_top;
+
+            let t = i as f64 / steps_per_sample;
+            let colour = current.lerp(&next, t);  // TODO: its a quadratic not a line.
+            canvas.set_draw_color(colour.sdl());
+            canvas.draw_line(Vector2::of(screen_x as f64, bottom).sdl(), Vector2::of(screen_x as f64, top).sdl()).unwrap();
+
+            last_top = top;
+        }
+    }
+}
+
+fn draw_full_floor_segment(canvas: &mut WindowCanvas, ray_line: LineSegment2, screen_x: i32, cumulative_dist: f64, colour: &Colour){
+    // The top of the last floor segment is the bottom of this one.
+    let (pixels_drawn, _) = project_to_screen(cumulative_dist);
+    let bottom = SCREEN_HEIGHT - pixels_drawn;
+
+    // The top of the floor segment is the bottom of where we'd draw if it was a wall.
+    let (_, top) = project_to_screen(cumulative_dist + ray_line.length());
+
+    canvas.set_draw_color(colour.sdl());
+    canvas.draw_line(Vector2::of(screen_x as f64, bottom).sdl(), Vector2::of(screen_x as f64, top).sdl()).unwrap();
+}
+
+// the sample_count should be high enough that we have one past the end to lerp to
+fn sample_floor_lighting(region: &Region, ray_line: LineSegment2, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+    let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
+    for i in 0..sample_count {
+        let pos = ray_line.a.add(&ray_line.direction().normalize().scale(i as f64 * -sample_length));
         samples.push(floor_point_lighting(region, pos));
     }
 
-    for s in 0..(sample_count + 1) {
-        let current = samples[s as usize];
-        let (_, top) = project_to_screen(cumulative_dist + sample_length);
-        canvas.set_draw_color(current.sdl());
-        canvas.draw_line(Vector2::of(screen_x as f64, bottom).sdl(), Vector2::of(screen_x as f64, top).sdl()).unwrap();
-        cumulative_dist += sample_length;
-        bottom -= (bottom - top);
-    }
+    samples
 }
 
 fn floor_point_lighting(region: &Region, hit_pos: Vector2) -> Colour {
@@ -209,11 +243,15 @@ fn project_to_screen(z_distance: f64) -> (f64, f64) {
     (y_top, y_bottom)
 }
 
-/// Assuming the forwards points at the middle of the screen, return it rotated to point at x instead.
-pub(crate) fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
+fn x_to_angle(screen_x: i32) -> f64{
     let t = screen_x as f64 / SCREEN_WIDTH as f64;
     let delta_deg = (t - 0.5) * FOV_DEG as f64;
     let delta_rad = PI * delta_deg / 180.0;
-    forwards.rotate(delta_rad)
+    delta_rad
+}
+
+/// Assuming the forwards points at the middle of the screen, return it rotated to point at x instead.
+pub(crate) fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
+    forwards.rotate(x_to_angle(screen_x))
 }
 

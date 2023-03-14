@@ -72,8 +72,8 @@ impl Material {
             colour: Colour::new(r, g, b),
             ambient: 0.1,
             diffuse: 0.9,
-            specular: 0.4,
-            shininess: 50.0,
+            specular: 0.2,
+            shininess: 10.0,
         }
     }
 
@@ -83,18 +83,18 @@ impl Material {
         let ambient_colour = base_colour.scale(self.ambient);
 
         let dir_to_light = light.pos.subtract(&hit_point).normalize();
-        let light_a_normal = dir_to_light.dot(&wall_normal);
+        let cos_light_to_normal = dir_to_light.dot(&wall_normal);
 
         let mut diffuse_colour = Colour::black();
         let mut specular_colour = Colour::black();
-        if light_a_normal >= 0.0 {
-            diffuse_colour = base_colour.scale(self.diffuse * light_a_normal);
+        if cos_light_to_normal >= 0.0 {
+            diffuse_colour = base_colour.scale(self.diffuse * cos_light_to_normal);
 
             let reflection_direction = dir_to_light.negate().reflect(wall_normal);
-            let reflect_a_eye = reflection_direction.dot(&to_eye);
+            let cos_reflect_to_eye = reflection_direction.dot(&to_eye);
 
-            if reflect_a_eye >= 0.0 {
-                let factor = reflect_a_eye.powf(self.shininess);
+            if cos_reflect_to_eye >= 0.0 {
+                let factor = cos_reflect_to_eye.powf(self.shininess);
                 specular_colour = light.intensity.scale(self.specular * factor);
             }
         }
@@ -102,11 +102,22 @@ impl Material {
         ambient_colour.add(diffuse_colour).add(specular_colour)
     }
 
+    // diffuse_factor = sum of cos_light_to_normal all the way up the light column.
+    // The normal is just up since its the floor. We need the vector from the hit_point to the point on pillar.
+    // cos = opposite / adjacent
+    // opposite = height of the point up the pillar
+    // adjacent = distance from the pillar to the hit_point
+    // want to do that for infinitely many points up the pillar
+    // integrate x=(0, height) of f(x) = (x / distance) dx
+    // f(x) = (1 / (2 * distance)) * x^2
+    // f(0) = 0
+    // so answer is just (1 / (2 * distance)) * height^2
     pub(crate) fn floor_lighting(&self, light: &ColumnLight, hit_point: Vector2) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
         let dist_to_light = light.pos.subtract(&hit_point);
-        let diffuse_factor = 50.0 / dist_to_light.length();
+        let height_of_light = 5.0 as f64;
+        let diffuse_factor = (1.0 / dist_to_light.length()) * (height_of_light.powi(2));
         let diffuse_colour = base_colour.scale(self.diffuse * diffuse_factor);
         ambient_colour.add(diffuse_colour)
     }
