@@ -1,4 +1,8 @@
-use crate::mth::Vector2;
+use std::cell::RefCell;
+use std::rc::Rc;
+use crate::mth::{EPSILON, Vector2};
+use crate::ray::ray_trace;
+use crate::world::Region;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub(crate) struct Colour {
@@ -78,19 +82,35 @@ impl Material {
     }
 
     /// Returns the colour of a certain column on the wall.
-    pub(crate) fn lighting(&self, light: &ColumnLight, hit_point: &Vector2, wall_normal: &Vector2, to_eye: &Vector2) -> Colour {
+    pub(crate) fn lighting(&self, region: &Rc<RefCell<Region>>, light: &ColumnLight, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
 
         let dir_to_light = light.pos.subtract(&hit_point).normalize();
-        let cos_light_to_normal = dir_to_light.dot(&wall_normal);
+        let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
+        let eye_on_front = to_eye.dot(&wall_normal) >= EPSILON;
+        if light_on_front != eye_on_front {
+            return ambient_colour;
+        }
 
+        let segments_from_light_to_hit = ray_trace(light.pos, dir_to_light.negate(), region);
+        let last_hit = segments_from_light_to_hit.last().unwrap();
+        let in_shadow = !last_hit.line.b.almost_equal(hit_point);
+        if in_shadow {
+            return ambient_colour;
+        }
+
+        if !light_on_front {
+            wall_normal = wall_normal.negate();
+        }
+
+        let cos_light_to_normal = dir_to_light.dot(&wall_normal);
         let mut diffuse_colour = Colour::black();
         let mut specular_colour = Colour::black();
         if cos_light_to_normal >= 0.0 {
             diffuse_colour = base_colour.scale(self.diffuse * cos_light_to_normal);
 
-            let reflection_direction = dir_to_light.negate().reflect(wall_normal);
+            let reflection_direction = dir_to_light.negate().reflect(&wall_normal);
             let cos_reflect_to_eye = reflection_direction.dot(&to_eye);
 
             if cos_reflect_to_eye >= 0.0 {
@@ -108,17 +128,17 @@ impl Material {
     // opposite = height of the point up the pillar
     // adjacent = distance from the pillar to the hit_point
     // want to do that for infinitely many points up the pillar
-    // integrate x=(0, height) of f(x) = (x / distance) dx
+    // f(x) = integral (x / distance) dx
     // f(x) = (1 / (2 * distance)) * x^2
     // f(0) = 0
-    // so answer is just (1 / (2 * distance)) * height^2
-    pub(crate) fn floor_lighting(&self, light: &ColumnLight, hit_point: Vector2) -> Colour {
+    // we care about the interval x=(0, height) so answer is just (1 / (2 * distance)) * height^2
+    pub(crate) fn floor_lighting(&self, region: &Rc<RefCell<Region>>, light: &ColumnLight, hit_point: Vector2) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
         let dist_to_light = light.pos.subtract(&hit_point);
-        let height_of_light = 5.0 as f64;
+        let height_of_light = 10.0 as f64;
         let diffuse_factor = (1.0 / dist_to_light.length()) * (height_of_light.powi(2));
-        let diffuse_colour = base_colour.scale(self.diffuse * diffuse_factor);
+        let diffuse_colour = base_colour.scale((self.diffuse * diffuse_factor).min(0.98));
         ambient_colour.add(diffuse_colour)
     }
 }

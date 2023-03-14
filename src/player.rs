@@ -24,7 +24,7 @@ pub(crate) struct Player {
 
 const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
-const PLAYER_SIZE: f64 = 10.0;
+const PLAYER_SIZE: f64 = 4.0;
 
 impl Player {
     pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Rc<RefCell<Region>>>, delta_time: f64, delta_mouse: i32) {

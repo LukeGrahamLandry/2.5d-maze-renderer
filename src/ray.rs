@@ -98,7 +98,7 @@ fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Reg
 
 #[derive(Debug, Clone)]
 pub(crate) struct HitResult {
-    pub(crate) region: Weak<RefCell<Region>>,
+    pub(crate) region: Weak<RefCell<Region>>,  // TODO: shouldn't be weak
     pub(crate) line: LineSegment2,
     pub(crate) kind: HitKind
 }
