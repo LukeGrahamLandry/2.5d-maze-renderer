@@ -89,10 +89,8 @@ impl Grid {
         let index = (pos.row * self.cols) + pos.col;
         &self.cells[index as usize]
     }
-}
 
-impl Display for Grid {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    pub fn to_string(&self) -> String {
         let chars_per_row = 2 + (4 * self.cols) as usize;
         let total_chars = chars_per_row * self.rows as usize;
         let mut result = String::with_capacity(total_chars);
@@ -127,7 +125,12 @@ impl Display for Grid {
             result.push_str(&*bottom);
             result.push('\n');
         }
+        result
+    }
+}
 
-        write!(f, "{}", result)
+impl Display for Grid {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
     }
 }

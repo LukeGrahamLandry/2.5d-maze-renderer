@@ -136,9 +136,9 @@ impl Material {
         let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
         let dist_to_light = light.pos.subtract(&hit_point);
-        let height_of_light = 10.0 as f64;
+        let height_of_light = 5.0 as f64;
         let diffuse_factor = (1.0 / dist_to_light.length()) * (height_of_light.powi(2));
-        let diffuse_colour = base_colour.scale((self.diffuse * diffuse_factor).min(0.98));
+        let diffuse_colour = base_colour.scale(self.diffuse * diffuse_factor);
         ambient_colour.add(diffuse_colour)
     }
 }
