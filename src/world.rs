@@ -1,16 +1,18 @@
 use std::cell::{Cell, Ref, RefCell, RefMut};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
+use maze::Pos;
 use crate::camera::{ray_direction_for_x, SCREEN_WIDTH};
-use crate::ray::{HitKind, HitResult, ray_trace};
+use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_path_between};
 use crate::material::{Material, ColumnLight, Colour};
 
-use crate::mth::{LineSegment2, Vector2};
+use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::player::{Player, WorldThing};
 
 pub struct World {
@@ -67,6 +69,9 @@ impl World {
                 }
             }
         }
+
+        let player = self.player.borrow();
+        Region::recalculate_lighting(player.region.clone());
     }
 
     pub(crate) fn create_example() -> World {
@@ -108,6 +113,7 @@ impl World {
         let player = Rc::new(RefCell::new(player));
         let weak_player = Rc::downgrade(&player);
         regions[0].borrow_mut().things.insert(id, weak_player);
+        Region::recalculate_lighting(player.borrow().region.clone());
 
         World {
             player,
@@ -143,7 +149,7 @@ impl World {
 pub(crate) struct Region {
     pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
     pub(crate) floor_material: Material,
-    pub(crate) lights: Vec<ColumnLight>,
+    pub(crate) lights: Vec<Rc<ColumnLight>>,
     pub(crate) things: HashMap<u64, Weak<RefCell<dyn WorldThing>>>
 }
 
@@ -161,6 +167,102 @@ impl Region {
             None => {}
             Some(i) => {
                 self.walls.remove(i);
+            }
+        }
+    }
+
+    pub(crate) fn recalculate_lighting(root_region: Rc<RefCell<Region>>){
+        let mut found_lights: HashMap<HashLight, Rc<RefCell<Region>>> = HashMap::new();
+        let mut found_walls: HashSet<HashWall> = HashSet::new();
+
+        Region::find_lights_recursively(root_region.clone(), &mut found_walls, &mut found_lights);
+
+        for (light, region) in found_lights {
+            println!("found light: {:?}", light);
+            Region::trace_portal_lights(region, &light);
+        }
+    }
+
+    const PORTAL_SAMPLE_LENGTH: f64 = 1.0 / 5.0;
+
+    pub(crate) fn trace_portal_lights(region: Rc<RefCell<Region>>, light: &Rc<ColumnLight>) {
+        // For every portal, cast a ray from the light to every point on the portal. The first time one hits, we care.
+        for wall in &region.borrow().walls {
+            let line = wall.borrow().line;
+            let normal = wall.borrow().normal;
+            let next_wall = wall.borrow().next_wall.clone();
+            match next_wall {
+                // If it's not a portal, we ignore it.
+                None => {}
+                Some(next_wall) => {
+                    let segments = Region::find_shortest_path(region.clone(), light,normal, line);
+                    match segments {
+                        // If the light doesn't hit it, we ignore it.
+                        None => {}
+                        Some(path) => {
+                            // Save where the light appears relative to the OUT portal.
+                            let next_wall = next_wall.upgrade().unwrap();
+                            {
+                                let adjusted_origin = Wall::translate(path.line.b, &*wall.borrow(), &*next_wall.borrow());
+                                let adjusted_direction = Wall::rotate(path.line.direction(), &*wall.borrow(), &*next_wall.borrow()).negate();
+                                let line = LineSegment2::from(adjusted_origin, adjusted_direction);
+                                println!("Save light: {:?} at {:?} on {:?}", light, line, next_wall.borrow());
+                                next_wall.borrow_mut().lights.insert(HashLight::of(light), line);
+                            }
+
+                            // TODO: the OUT portal now needs to send the light to all the other portals in its region. With some limit on the recursion.
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn find_shortest_path(region: Rc<RefCell<Region>>, light: &ColumnLight, wall_normal: Vector2, wall: LineSegment2) -> Option<HitResult> {
+        let sample_count = (wall.length() / Region::PORTAL_SAMPLE_LENGTH).floor();
+        let mut shortest_path = None;
+        let mut shortest_distance = f64::INFINITY;
+        for i in 0..(sample_count as i32) {
+            let t = i as f64 / sample_count;
+            let wall_point = wall.at_t(t);
+            let segments = trace_clear_path_between(light.pos, wall_point, &region);
+            match segments {
+                None => {}
+                Some(mut segments) => {
+                    if segments.len() == 1 {
+                        let path = segments.pop().unwrap();
+                        let hits_front = path.line.direction().dot(&wall_normal) > EPSILON;
+                        if hits_front && path.line.length() < shortest_distance {
+                            shortest_distance = path.line.length();
+                            shortest_path = Some(path);
+                        }
+                    }
+
+                }
+            }
+        }
+
+        shortest_path
+    }
+
+    // this doesn't need a recursion limit, because the HashSet prevents loops.
+    // TODO: this will just reset everything in the whole world. Need to be smarter about which can see each other.
+    pub(crate) fn find_lights_recursively(region: Rc<RefCell<Region>>, mut found_walls: &mut HashSet<HashWall>, mut found_lights: &mut HashMap<HashLight, Rc<RefCell<Region>>>){
+        for light in &region.borrow().lights {
+            found_lights.insert(HashLight::of(light), region.clone());
+        }
+
+        for wall in &region.borrow().walls {
+            match &wall.borrow().next_wall {
+                None => {}
+                Some(next_wall) => {
+                    if found_walls.insert(HashWall::of(wall)) {
+                        let next_wall = next_wall.upgrade().unwrap();
+                        let next_wall = next_wall.borrow();
+                        let next_region = next_wall.region.upgrade().unwrap();
+                        Region::find_lights_recursively(next_region.clone(), &mut found_walls, &mut found_lights);
+                    }
+                }
             }
         }
     }
@@ -195,7 +297,7 @@ impl Region {
                     intensity: Colour::white()
                 }
             };
-            m_region.lights.push(light);
+            m_region.lights.push(Rc::new(light));
         }
 
         region
@@ -208,7 +310,8 @@ pub(crate) struct Wall {
     pub(crate) normal: Vector2,
     pub(crate) region: Weak<RefCell<Region>>,
     pub(crate) next_wall: Option<Weak<RefCell<Wall>>>,
-    pub(crate) material: Material
+    pub(crate) material: Material,
+    pub(crate) lights: HashMap<HashLight, LineSegment2>  // lights that are on the other side of the portal -> relative position behind the portal
 }
 
 impl Wall {
@@ -218,7 +321,8 @@ impl Wall {
             next_wall: None,
             normal,
             line,
-            material: Material::new(0.2, 0.8, 0.2)
+            material: Material::new(0.2, 0.8, 0.2),
+            lights: HashMap::new()
         };
         Rc::new(RefCell::new(wall))
     }
@@ -248,5 +352,67 @@ impl Wall {
         } else {
             dir.negate()
         }
+    }
+}
+
+
+#[derive(Debug)]
+pub(crate) struct HashLight(Rc<ColumnLight>);
+
+impl HashLight {
+    fn of(x: &Rc<ColumnLight>) -> HashLight {
+        HashLight {0: x.clone() }
+    }
+}
+
+impl PartialEq for HashLight {
+    fn eq(&self, other: &HashLight) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for HashLight {}
+
+impl Hash for HashLight {
+    fn hash<H>(&self, hasher: &mut H) where H: Hasher {
+        hasher.write_usize(Rc::as_ptr(&self.0) as usize);
+    }
+}
+
+impl Deref for HashLight {
+    type Target = Rc<ColumnLight>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub(crate) struct HashWall(Rc<RefCell<Wall>>);
+
+impl HashWall {
+    fn of(x: &Rc<RefCell<Wall>>) -> HashWall {
+        HashWall {0: x.clone() }
+    }
+}
+
+impl PartialEq for HashWall {
+    fn eq(&self, other: &HashWall) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for HashWall {}
+
+impl Hash for HashWall {
+    fn hash<H>(&self, hasher: &mut H) where H: Hasher {
+        hasher.write_usize(Rc::as_ptr(&self.0) as usize);
+    }
+}
+
+impl Deref for HashWall {
+    type Target = Rc<RefCell<Wall>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

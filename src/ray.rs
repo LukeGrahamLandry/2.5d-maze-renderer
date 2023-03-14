@@ -47,8 +47,20 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Rc
     segments
 }
 
-/// Sends a ray through a single region until it hits a wall.
-fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Region>>) -> HitResult {
+pub(crate) fn trace_clear_path_between(origin: Vector2, target: Vector2, region: &Rc<RefCell<Region>>) -> Option<Vec<HitResult>> {
+    let direction = target.subtract(&origin).normalize();
+    let segments = ray_trace(origin, direction, region);
+    let last_hit = segments.last().unwrap();
+    let has_clear_path = last_hit.line.b.almost_equal(&target);
+    if has_clear_path {
+        Some(segments)
+    } else {
+        None
+    }
+}
+
+/// Sends a ray through a single region until it hits a wall. Without following portals.
+pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Rc<RefCell<Region>>) -> HitResult {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
     let mut shortest_hit_distance = f64::INFINITY;

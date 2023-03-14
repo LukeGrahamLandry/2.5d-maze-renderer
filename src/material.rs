@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use crate::mth::{EPSILON, Vector2};
-use crate::ray::ray_trace;
+use crate::ray::{ray_trace, trace_clear_path_between};
 use crate::world::Region;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -89,14 +89,7 @@ impl Material {
         let dir_to_light = light.pos.subtract(&hit_point).normalize();
         let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
         let eye_on_front = to_eye.dot(&wall_normal) >= EPSILON;
-        if light_on_front != eye_on_front {
-            return ambient_colour;
-        }
-
-        let segments_from_light_to_hit = ray_trace(light.pos, dir_to_light.negate(), region);
-        let last_hit = segments_from_light_to_hit.last().unwrap();
-        let in_shadow = !last_hit.line.b.almost_equal(hit_point);
-        if in_shadow {
+        if light_on_front != eye_on_front || trace_clear_path_between(light.pos, *hit_point, region).is_none(){
             return ambient_colour;
         }
 

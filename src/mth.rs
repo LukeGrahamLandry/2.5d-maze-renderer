@@ -222,10 +222,19 @@ impl LineSegment2 {
     }
 
     /// What fraction along the line is the point
+    /// Does not check that the point is actually on the line.
     pub(crate) fn t_of(&self, point: &Vector2) -> f64 {
         let dir = self.direction();
         let offset = point.subtract(&self.a);
         offset.length() / dir.length()
+    }
+
+    /// Get the point this fraction along the line.
+    /// No bounds checking.
+    pub(crate) fn at_t(&self, t: f64) -> Vector2 {
+        let dir = self.direction();
+        let offset = dir.scale(t);
+        self.a.add(&offset)
     }
 
     /// The point might not actually be on the line segment, if the infinite algebraic line intersect but are far apart.
