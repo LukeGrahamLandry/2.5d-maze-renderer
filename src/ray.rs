@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
-use crate::mth::{LineSegment2, Vector2};
+use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::world::{Region, Wall};
 
 const PORTAL_LIMIT: u16 = 15;
@@ -57,6 +57,49 @@ pub(crate) fn trace_clear_path_between(origin: Vector2, target: Vector2, region:
     } else {
         None
     }
+}
+
+// This could use trace_clear_path_between and check that the vec is only one long but that would waste time tracing through portals that we don't care about.
+pub(crate) fn trace_clear_path_no_portals_between(origin: Vector2, target: Vector2, region: &Rc<RefCell<Region>>) -> Option<HitResult> {
+    let direction = target.subtract(&origin).normalize();
+    let last_hit = single_ray_trace(origin, direction, region);
+    let has_clear_path = last_hit.line.b.almost_equal(&target);
+    if has_clear_path {
+        Some(last_hit)
+    } else {
+        None
+    }
+}
+
+// TODO: see if i can organize these better so internally there's one generic implementation with different flags
+//       but also make sure it doesn't devolve into new RayCasterManagerAbstractFactoryBuilder().build().run(...)
+
+// does not go through portals
+/// Sends a ray through a single region without following portals. The ray starts from the far end of the relative_light line.
+/// Returns the ray line segment (from portal to target) if it did not hit any walls after the portal and went through the portal.
+pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall: LineSegment2, target: Vector2, region: &Rc<RefCell<Region>>) -> Option<LineSegment2> {
+    let light_fake_origin = relative_light.get_b();
+    let _pos_on_portal_closest_to_fake_light = relative_light.get_a();  // dont care
+
+    let ray = LineSegment2::of(light_fake_origin, target);
+
+    let ray_hit_portal_pos = ray.intersection(&portal_wall);
+    if ray_hit_portal_pos.is_nan() {  // The light does not pass through the portal to the point.
+        return None;
+    }
+
+    let direction = target.subtract(&ray_hit_portal_pos);
+
+    let ray = LineSegment2::from(ray_hit_portal_pos.add(&direction.tiny()), direction.scale(1.0 - (5.0 * EPSILON)));
+    let m_region = region.borrow();
+    for wall in &m_region.walls {
+        let hit = wall.borrow().line.intersection(&ray);
+        if !hit.is_nan() {
+            return None;
+        }
+    }
+
+    Some(ray)
 }
 
 /// Sends a ray through a single region until it hits a wall. Without following portals.

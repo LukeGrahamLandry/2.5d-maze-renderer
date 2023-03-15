@@ -79,30 +79,30 @@ impl World {
 
         regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
         regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
-        regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
+        // regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
 
         regions[0].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 50);
         regions[1].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 0);
-        regions[2].borrow_mut().floor_material.colour = Colour::rgb(0, 0, 50);
+        // regions[2].borrow_mut().floor_material.colour = Colour::rgb(0, 0, 50);
 
-        let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
-        let wall = Wall::new(line, line.normal(), &regions[0]);
-        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[1]));
-        regions[0].borrow_mut().walls.push(wall);
+        // let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
+        // let wall = Wall::new(line, line.normal(), &regions[0]);
+        // wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[1]));
+        // regions[0].borrow_mut().walls.push(wall);
+        //
+        // let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
+        // let wall = Wall::new(line, line.normal().negate(), &regions[0]);
+        // wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[0]));
+        // regions[0].borrow_mut().walls.push(wall);
 
-        let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-        let wall = Wall::new(line, line.normal().negate(), &regions[0]);
-        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[0]));
-        regions[0].borrow_mut().walls.push(wall);
-
+        regions[1].borrow_mut().lights.clear();
 
         regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[1]));
 
         regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(Rc::downgrade(&regions[0].borrow().walls[0]));
 
-        regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[3]));
-
-        regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[2]));
+        // regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[3]));
+        // regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[2]));
 
         let mut player = Player::new(&regions[0]);
         player.pos.x = 150.0;
@@ -113,6 +113,7 @@ impl World {
         let player = Rc::new(RefCell::new(player));
         let weak_player = Rc::downgrade(&player);
         regions[0].borrow_mut().things.insert(id, weak_player);
+
         Region::recalculate_lighting(player.borrow().region.clone());
 
         World {
@@ -195,7 +196,7 @@ impl Region {
                 // If it's not a portal, we ignore it.
                 None => {}
                 Some(next_wall) => {
-                    let segments = Region::find_shortest_path(region.clone(), light,normal, line);
+                    let segments = Region::find_shortest_path(region.clone(), light.pos,normal, line);
                     match segments {
                         // If the light doesn't hit it, we ignore it.
                         None => {}
@@ -218,14 +219,15 @@ impl Region {
         }
     }
 
-    fn find_shortest_path(region: Rc<RefCell<Region>>, light: &ColumnLight, wall_normal: Vector2, wall: LineSegment2) -> Option<HitResult> {
+    // TODO: move to ray.rs
+    pub(crate) fn find_shortest_path(region: Rc<RefCell<Region>>, pos: Vector2, wall_normal: Vector2, wall: LineSegment2) -> Option<HitResult> {
         let sample_count = (wall.length() / Region::PORTAL_SAMPLE_LENGTH).floor();
         let mut shortest_path = None;
         let mut shortest_distance = f64::INFINITY;
         for i in 0..(sample_count as i32) {
             let t = i as f64 / sample_count;
             let wall_point = wall.at_t(t);
-            let segments = trace_clear_path_between(light.pos, wall_point, &region);
+            let segments = trace_clear_path_between(pos, wall_point, &region);
             match segments {
                 None => {}
                 Some(mut segments) => {

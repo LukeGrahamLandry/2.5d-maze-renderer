@@ -7,6 +7,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use crate::maze_world::{random_maze_world, shift_the_world};
+use crate::world::World;
 
 mod world;
 mod player;
@@ -37,7 +38,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = random_maze_world();
+    let mut world = World::create_example();
     let mut first_person_rendering = false;
 
     canvas.clear();

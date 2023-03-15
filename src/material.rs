@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::mth::{EPSILON, Vector2};
-use crate::ray::{ray_trace, trace_clear_path_between};
+use crate::mth::{EPSILON, LineSegment2, Vector2};
+use crate::ray::{ray_trace, trace_clear_path_between, trace_clear_portal_light};
 use crate::world::Region;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -81,18 +81,40 @@ impl Material {
         }
     }
 
-    /// Returns the colour of a certain column on the wall.
-    pub(crate) fn lighting(&self, region: &Rc<RefCell<Region>>, light: &ColumnLight, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2) -> Colour {
-        let base_colour = self.colour.multiply(light.intensity);
-        let ambient_colour = base_colour.scale(self.ambient);
+    // TODO: Feel like these ones that care about the region cause they do ray tracing should go in ray.rs
 
+    /// Returns the colour of a certain column on the wall.
+    pub(crate) fn direct_wall_lighting(&self, region: &Rc<RefCell<Region>>, light: &ColumnLight, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
         let dir_to_light = light.pos.subtract(&hit_point).normalize();
         let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
         let eye_on_front = to_eye.dot(&wall_normal) >= EPSILON;
-        if light_on_front != eye_on_front || trace_clear_path_between(light.pos, *hit_point, region).is_none(){
+        let in_shadow = light_on_front != eye_on_front || trace_clear_path_between(light.pos, *hit_point, region).is_none();
+
+        self.wall_lighting(light.intensity, light.pos, hit_point, wall_normal, to_eye, in_shadow)
+    }
+
+    pub(crate) fn portal_wall_lighting(&self, region: &Rc<RefCell<Region>>, relative_light: LineSegment2, portal_wall: LineSegment2, light: &ColumnLight, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
+        let light_fake_origin = relative_light.get_b();
+        let dir_to_light = light_fake_origin.subtract(&hit_point).normalize();
+        let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
+        let eye_on_front = to_eye.dot(&wall_normal) >= EPSILON;
+        let in_shadow = light_on_front != eye_on_front || trace_clear_portal_light(relative_light, portal_wall, *hit_point, region).is_none();
+
+        self.wall_lighting(light.intensity, light_fake_origin, hit_point, wall_normal, to_eye, in_shadow)
+    }
+
+    // Does not do ray tracing. Just trusts that the values passed in make sense.
+    /// https://en.wikipedia.org/wiki/Phong_reflection_model
+    fn wall_lighting(&self, light_intensity: Colour, light_pos: Vector2, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2, in_shadow: bool) -> Colour {
+        let base_colour = self.colour.multiply(light_intensity);
+        let ambient_colour = base_colour.scale(self.ambient);
+
+        if in_shadow {
             return ambient_colour;
         }
 
+        let dir_to_light = light_pos.subtract(&hit_point).normalize();
+        let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
         if !light_on_front {
             wall_normal = wall_normal.negate();
         }
@@ -108,11 +130,22 @@ impl Material {
 
             if cos_reflect_to_eye >= 0.0 {
                 let factor = cos_reflect_to_eye.powf(self.shininess);
-                specular_colour = light.intensity.scale(self.specular * factor);
+                specular_colour = light_intensity.scale(self.specular * factor);
             }
         }
 
         ambient_colour.add(diffuse_colour).add(specular_colour)
+    }
+
+
+    pub(crate) fn direct_floor_lighting(&self, region: &Rc<RefCell<Region>>, light: &ColumnLight, hit_point: Vector2) -> Colour {
+        self.floor_lighting(light.intensity, light.pos, hit_point, false)
+    }
+
+    pub(crate) fn portal_floor_lighting(&self, region: &Rc<RefCell<Region>>, relative_light: LineSegment2, portal_wall: LineSegment2, light: &ColumnLight, hit_point: Vector2) -> Colour {
+        let in_shadow = trace_clear_portal_light(relative_light, portal_wall, hit_point, region).is_none();
+
+        self.floor_lighting(light.intensity, relative_light.get_b(), hit_point, in_shadow)
     }
 
     // diffuse_factor = sum of cos_light_to_normal all the way up the light column.
@@ -125,10 +158,14 @@ impl Material {
     // f(x) = (1 / (2 * distance)) * x^2
     // f(0) = 0
     // we care about the interval x=(0, height) so answer is just (1 / (2 * distance)) * height^2
-    pub(crate) fn floor_lighting(&self, region: &Rc<RefCell<Region>>, light: &ColumnLight, hit_point: Vector2) -> Colour {
-        let base_colour = self.colour.multiply(light.intensity);
+    fn floor_lighting(&self, light_intensity: Colour, light_pos: Vector2, hit_point: Vector2, in_shadow: bool) -> Colour {
+        let base_colour = self.colour.multiply(light_intensity);
         let ambient_colour = base_colour.scale(self.ambient);
-        let dist_to_light = light.pos.subtract(&hit_point);
+        if in_shadow {
+            return ambient_colour;
+        }
+
+        let dist_to_light = light_pos.subtract(&hit_point);
         let height_of_light = 5.0 as f64;
         let diffuse_factor = (1.0 / dist_to_light.length()) * (height_of_light.powi(2));
         let diffuse_colour = base_colour.scale(self.diffuse * diffuse_factor);

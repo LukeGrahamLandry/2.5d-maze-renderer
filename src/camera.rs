@@ -6,14 +6,14 @@ use sdl2::render::WindowCanvas;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
-use crate::ray::{HitKind, HitResult, ray_trace};
+use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
 
 use crate::world::{Region, Wall, World};
 
 const FOV_DEG: i32 = 45;
 const SCREEN_HEIGHT: f64 = 600.0;
 pub const SCREEN_WIDTH: u32 = 800;
-const RESOLUTION_FACTOR: f64 = 1.0 / 1.0;
+const RESOLUTION_FACTOR: f64 = 1.0;
 
 
 fn draw_between(canvas: &mut WindowCanvas, start: Vector2, end: Vector2){
@@ -33,18 +33,15 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         // Draw lights
         let ray_count = 128;
         for light in &region.borrow().lights {
-            let hit_colour = light.intensity.scale(0.2);
+            let hit_colour = light.intensity.scale(0.3);
             let miss_colour = light.intensity.scale(0.1);
             for r in 0..ray_count {
-                // Draw the first segment of the ray, the rest will come from the portals instead.
+                // Draw rays
                 let direction = Vector2::from_angle(r as f64 * PI / (ray_count as f64 / 2.0), 1.0);
                 let ray_start = light.pos.add(&direction.scale(3.0));
-                let segments = ray_trace(ray_start, direction, &region);
-                draw_ray_segment_2d(canvas, offset, segments.first().unwrap(), hit_colour, miss_colour);
+                let segment = single_ray_trace(ray_start, direction, &region);
 
-                // Draw colour
-                canvas.set_draw_color(light.intensity.sdl());
-                draw_between(canvas, light.pos.subtract(&offset), ray_start.subtract(&offset));
+                draw_ray_segment_2d(canvas, offset, &segment, hit_colour, miss_colour);
             }
         }
 
@@ -55,17 +52,36 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
 
             // Draw saved lights
             let wall = wall.borrow();
-            match &wall.next_wall {
-                None => {}
-                Some(next_wall) => {
-                    let next_wall = next_wall.upgrade().unwrap();
-                    let next_wall = next_wall.borrow();
+            for (light, fake_location) in &wall.lights {
+                let light_fake_origin = fake_location.get_b();
+                let light_hits_portal_at = fake_location.get_a();
 
-                    for (light, line) in &next_wall.lights {
-                        canvas.set_draw_color(light.intensity.sdl());
-                        draw_between(canvas, line.a.subtract(&offset), line.b.subtract(&offset));
+                canvas.set_draw_color(light.intensity.scale(0.2).sdl());
+                for r in 0..ray_count {
+                    let direction = Vector2::from_angle(r as f64 * PI / (ray_count as f64 / 2.0), 1.0);
+
+                    let light_toward_portal = LineSegment2::from(light_fake_origin, direction.scale(100.0));
+                    let point_on_portal = wall.line.algebraic_intersection(&light_toward_portal);
+                    let actually_crosses_portal = wall.line.contains(&point_on_portal);
+                    if !actually_crosses_portal {
+                        continue;
+                    }
+
+                    let direction = point_on_portal.subtract(&light_fake_origin);
+                    let segments = ray_trace(point_on_portal.add(&direction.tiny()), direction, &region);
+                    let wall_hit_point = segments.last().unwrap().line.b;
+
+                    let line = trace_clear_portal_light(*fake_location, wall.line, wall_hit_point, region);
+                    match line {
+                        None => {}
+                        Some(line) => {
+                            draw_between(canvas, line.a.subtract(&offset), line.b.subtract(&offset));
+                        }
                     }
                 }
+
+                canvas.set_draw_color(light.intensity.scale(1.0).sdl());
+                draw_between(canvas, fake_location.a.subtract(&offset), fake_location.b.subtract(&offset));
             }
         }
     }
@@ -186,8 +202,6 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, segment: &HitResult, screen_x: 
     }
 }
 
-
-
 // the sample_count should be high enough that we have one past the end to lerp to
 fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
@@ -204,8 +218,14 @@ fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i3
 fn light_floor_point(region: &Rc<RefCell<Region>>, hit_pos: Vector2) -> Colour {
     let mut colour = Colour::black();
     for light in &region.borrow().lights {
-        colour = colour.add(region.borrow().floor_material.floor_lighting(region, light, hit_pos));
+        colour = colour.add(region.borrow().floor_material.direct_floor_lighting(region, light, hit_pos));
     }
+    for wall in &region.borrow().walls {
+        for (light, fake_location) in &wall.borrow().lights {
+            colour = colour.add(region.borrow().floor_material.portal_floor_lighting(region, *fake_location, wall.borrow().line, &light, hit_pos));
+        }
+    }
+
     colour
 }
 
@@ -248,7 +268,13 @@ fn light_wall_column(region: &Rc<RefCell<Region>>, hit_point: &Vector2, wall_nor
     let mut colour = Colour::black();
     let to_eye = ray_direction.negate().normalize();
     for light in &region.borrow().lights {
-        colour = colour.add(material.lighting(region, &light, hit_point, wall_normal, &to_eye));
+        colour = colour.add(material.direct_wall_lighting(region, &light, hit_point, wall_normal, &to_eye));
+    }
+
+    for wall in &region.borrow().walls {
+        for (light, fake_location) in &wall.borrow().lights {
+            colour = colour.add(material.portal_wall_lighting(region, *fake_location, wall.borrow().line, &light, hit_point, wall_normal, &to_eye));
+        }
     }
 
     if has_flash_light && x == middle {

@@ -31,6 +31,10 @@ impl Vector2 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 
+    pub(crate) fn tiny(&self) -> Vector2 {
+        self.scale(EPSILON)
+    }
+
     pub fn normalize(&self) -> Vector2 {
         let len = self.length();
         if len != 0.0 {
@@ -120,9 +124,18 @@ pub struct LineSegment2 {
     pub(crate) b: Vector2
 }
 
+// TODO: be consistent about which is start and which is end. currently it depends where you got the line which is insane.
 impl LineSegment2 {
     pub(crate) fn of(start_point: Vector2, end_point: Vector2) -> LineSegment2 {
         LineSegment2 {a: start_point, b: end_point}
+    }
+
+    pub(crate) fn get_a(&self) -> Vector2 {
+        self.a
+    }
+
+    pub(crate) fn get_b(&self) -> Vector2 {
+        self.b
     }
 
     pub(crate) fn from(origin: Vector2, direction: Vector2) -> LineSegment2 {
@@ -206,8 +219,8 @@ impl LineSegment2 {
     /// Returns true if the point is on the actual line segment (not just the algebraic line).
     /// Correctly returns false for nan points because any comparison against nan is false.
     pub(crate) fn contains(&self, point: &Vector2) -> bool {
-        point.y >= self.a.y.min(self.b.y) && point.y <= self.a.y.max(self.b.y)
-            && point.x >= self.a.x.min(self.b.x) && point.x <= self.a.x.max(self.b.x)
+        (self.a.y.min(self.b.y) - point.y) < EPSILON && (point.y - self.a.y.max(self.b.y)) < EPSILON
+            && (self.a.x.min(self.b.x) - point.x) < EPSILON && (point.x - self.a.x.max(self.b.x)) < EPSILON
     }
 
     /// Returns NAN if the point is not in the range of both segments.
@@ -276,6 +289,7 @@ impl LineSegment2 {
 
 
 // insane hand rolled 2x2 row reduction cause i'm just experimenting with what lines are
+// TODO: do it the normal way cause this matters for performance when everything im doing is ray casting
 pub fn reduce(r1: &mut [f64; 3], r2: &mut [f64; 3]) {
     if r2[0] != 0.0 && r1[0] == 0.0 {
         for i in 0..3 {
