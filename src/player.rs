@@ -1,25 +1,27 @@
 use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::fmt::{Debug, Formatter};
-use std::rc::Rc;
+use std::hash::{Hash, Hasher};
+use std::sync::RwLock;
 use sdl2::keyboard::Keycode;
+use sdl2::libc::{boolean_t, write};
 
 use crate::material::Material;
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::{HitKind, HitResult, VIEW_DIST};
-use crate::world::{Region, Wall};
+use crate::world::{Region, Shelf, ShelfView, Wall};
 
 pub(crate) struct Player {
     pub(crate) pos: Vector2,
     pub(crate) look_direction: Vector2,
     pub(crate) move_direction: Vector2,
-    pub(crate) region: Rc<RefCell<Region>>,
+    pub(crate) region: Shelf<Region>,
     pub(crate) has_flash_light: bool,
-    pub(crate) portals: [Option<Rc<RefCell<Wall>>>; 2],
+    pub(crate) portals: [Option<Shelf<Wall>>; 2],
     pub(crate) bounding_box: [LineSegment2; 4],
     pub(crate) id: u64,
     pub(crate) material: Material,
-    pub(crate) needs_render_update: std::cell::Cell<bool>
+    pub(crate) needs_render_update: RwLock<bool>
 }
 
 const MOVE_SPEED: f64 = 100.0;
@@ -27,7 +29,7 @@ const TURN_SPEED: f64 = 0.002;
 const PLAYER_SIZE: f64 = 4.0;
 
 impl Player {
-    pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Rc<RefCell<Region>>>, delta_time: f64, delta_mouse: i32) {
+    pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Shelf<Region>>, delta_time: f64, delta_mouse: i32) {
         if self.update_direction(pressed, delta_mouse) {
             let move_direction = self.handle_collisions(regions, self.move_direction);
 
@@ -37,7 +39,7 @@ impl Player {
         }
     }
 
-    pub(crate) fn handle_collisions(&mut self, regions: &Vec<Rc<RefCell<Region>>>, mut move_direction: Vector2) -> Vector2 {
+    pub(crate) fn handle_collisions(&mut self, regions: &Vec<Shelf<Region>>, mut move_direction: Vector2) -> Vector2 {
         let player_size = 11.0;
         let ray = LineSegment2::from(self.pos, move_direction.scale(player_size));
 
@@ -68,20 +70,20 @@ impl Player {
                     if wall.next_wall.is_none() || hit_back || hit_edge {
                         move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
                     } else {
-                        let next_wall = wall.next_wall.as_ref().unwrap().upgrade().unwrap();
+                        let next_wall = wall.next_wall.as_ref().unwrap().upgrade();
                         let next_region = next_wall.borrow().region.clone();
 
-                        if !Rc::ptr_eq(&region, &next_region.upgrade().unwrap()) {
+                        if !region.ptr_eq(&next_region.upgrade()) {
                             let player = m_region.things.remove(&self.id);
                             match player {
                                 None => {
                                     panic!("Tried to remove player from a region but they weren't there.")
                                 }
                                 Some(player) => {
-                                    next_region.upgrade().unwrap().borrow_mut().things.insert(self.id, player);
+                                    next_region.upgrade().borrow_mut().things.insert(self.id, player);
                                 }
                             }
-                            self.region = next_region.upgrade().unwrap();
+                            self.region = next_region.upgrade();
                         }
 
                         let next_wall = next_wall.borrow();
@@ -131,7 +133,7 @@ impl Player {
         let needs_physics_update = !relative_move_direction.is_zero();
 
         if delta_mouse != 0 || needs_physics_update {
-            self.needs_render_update.replace(true);
+            *self.needs_render_update.write().unwrap() = true;
         }
 
         needs_physics_update
@@ -141,7 +143,7 @@ impl Player {
         match self.portals[portal_index].as_mut() {
             None => {}
             Some(portal) => {
-                portal.borrow_mut().region.upgrade().unwrap().borrow_mut().remove_wall(&portal);
+                portal.borrow_mut().region.upgrade().borrow_mut().remove_wall(&portal);
             }
         }
         self.portals[portal_index] = None;
@@ -150,10 +152,10 @@ impl Player {
     pub(crate) fn update_bounding_box(&mut self) {
         let s = PLAYER_SIZE / 2.0;
         self.bounding_box = LineSegment2::new_square(self.pos.x - s, self.pos.y - s, self.pos.x + s, self.pos.y + s);
-        self.needs_render_update.replace(true);
+        *self.needs_render_update.write().unwrap() = true;
     }
 
-    pub(crate) fn new(start_region: &Rc<RefCell<Region>>) -> Player {
+    pub(crate) fn new(start_region: &Shelf<Region>) -> Player {
         Player {
             pos: Vector2::zero(),
             look_direction: Vector2::of(0.0, -1.0),
@@ -164,7 +166,7 @@ impl Player {
             bounding_box: LineSegment2::new_square(0.0, 0.0, 0.0, 0.0),
             id: 0,
             material: Material::new(1.0, 0.0, 0.0),
-            needs_render_update: std::cell::Cell::new(true)
+            needs_render_update: RwLock::new(true)
         }
     }
 }
@@ -203,7 +205,7 @@ impl WorldThing for Player {
             }
             Some(hit_side) => {
                 HitResult {
-                    region: Rc::downgrade(&self.region),
+                    region: self.region.downgrade(),
                     line: LineSegment2::of(origin, closest_hit_point),
                     kind: HitKind::Player {
                         box_side: hit_side.clone()

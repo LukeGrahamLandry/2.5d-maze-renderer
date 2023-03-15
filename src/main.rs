@@ -7,7 +7,7 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use crate::maze_world::{random_maze_world, shift_the_world};
-use crate::world::World;
+use crate::world::{Shelf, World};
 
 mod world;
 mod player;
@@ -66,13 +66,13 @@ pub fn run() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => {
                     first_person_rendering = !first_person_rendering;
-                    world.player.borrow().needs_render_update.replace(true);
+                    *world.player.borrow().needs_render_update.write().unwrap() = true;
                 },
 
                 Event::KeyDown { keycode: Some(Keycode::R), .. }
                 => {
                     shift_the_world(&mut world);
-                    world.player.borrow().needs_render_update.replace(true);
+                    *world.player.borrow().needs_render_update.write().unwrap() = true;
                 },
 
                 Event::MouseButtonDown { mouse_btn, .. } => {
@@ -98,9 +98,9 @@ pub fn run() -> Result<(), String> {
             let frame_time = (ms_counter / (frame_counter as f64)).round() as u64;
             let fps = (frame_counter as f64 / seconds_counter).round();
             let total_delay_ms = (frame_counter * FRAME_DELAY_MS) as f64;
-            let sleep_percent = (total_delay_ms / ms_counter * 100.0).round();
-            let pause_percent = (pause_seconds_counter / seconds_counter * 100.0).round();
-            println!("{} fps; {} ms per frame (sleeping {}%, idle {}%)", fps, frame_time, sleep_percent, pause_percent);
+            let sleep_peArcent = (total_delay_ms / ms_counter * 100.0).round();
+            let pause_peArcent = (pause_seconds_counter / seconds_counter * 100.0).round();
+            println!("{} fps; {} ms per frame (sleeping {}%, idle {}%)", fps, frame_time, sleep_peArcent, pause_peArcent);
             seconds_counter = 0.0;
             frame_counter = 0;
             pause_seconds_counter = 0.0;
@@ -114,7 +114,7 @@ pub fn run() -> Result<(), String> {
         world.update(duration, &keys, delta_mouse);
 
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
-        let needs_render_update = world.player.borrow().needs_render_update.get();
+        let needs_render_update = *world.player.borrow().needs_render_update.read().unwrap();
         if needs_render_update {
             canvas.set_draw_color(Color::RGB(0, 0, 0));
             canvas.clear();
@@ -124,7 +124,7 @@ pub fn run() -> Result<(), String> {
             } else {
                 camera::render2d(&world, &mut canvas, duration);
             }
-            world.player.borrow().needs_render_update.replace(false);
+            *world.player.borrow().needs_render_update.write().unwrap() = false;
 
             canvas.present();
         } else {

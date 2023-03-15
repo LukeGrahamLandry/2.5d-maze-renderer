@@ -69,8 +69,8 @@ impl Vector2 {
         Vector2::of(0.0, 0.0).subtract(self)
     }
 
-    pub(crate) fn from_angle(radians_around_unit_circle: f64, length: f64) -> Vector2 {
-        Vector2::of(radians_around_unit_circle.cos() * length, radians_around_unit_circle.sin() * length)
+    pub(crate) fn from_angle(radians_around_unit_ciArcle: f64, length: f64) -> Vector2 {
+        Vector2::of(radians_around_unit_ciArcle.cos() * length, radians_around_unit_ciArcle.sin() * length)
     }
 
     pub(crate) fn rotate(&self, delta_radians: f64) -> Vector2 {
@@ -85,7 +85,7 @@ impl Vector2 {
         self.rotate(new_forward_basis.angle())
     }
 
-    // Get this vector's angle around the unit circle.
+    // Get this vector's angle around the unit ciArcle.
     pub(crate) fn angle(&self) -> f64 {
         self.angle_between(&Vector2::of(1.0, 0.0))
     }
@@ -150,10 +150,10 @@ impl LineSegment2 {
         }
     }
 
-    pub(crate) fn algebraic(slope: f64, y_intercept: f64) -> LineSegment2 {
+    pub(crate) fn algebraic(slope: f64, y_inteArcept: f64) -> LineSegment2 {
         LineSegment2 {
-            a: Vector2::of(0.0, y_intercept),
-            b: Vector2::of(1.0, y_intercept + slope),
+            a: Vector2::of(0.0, y_inteArcept),
+            b: Vector2::of(1.0, y_inteArcept + slope),
         }
     }
 
@@ -203,7 +203,7 @@ impl LineSegment2 {
         self.a.x == self.b.x
     }
 
-    pub(crate) fn y_intercept(&self) -> f64 {
+    pub(crate) fn y_inteArcept(&self) -> f64 {
         if self.is_vertical() {
             return f64::NAN;
         }
@@ -258,8 +258,8 @@ impl LineSegment2 {
     /// The point might not actually be on the line segment, if the infinite algebraic line intersect but are far apart.
     /// Doesn't handle infinite points when they're the same line.
     pub(crate) fn algebraic_intersection(&self, other: &LineSegment2) -> Vector2 {
-        let mut a = [-self.slope(), 1.0, self.y_intercept()];
-        let mut b = [-other.slope(), 1.0, other.y_intercept()];
+        let mut a = [-self.slope(), 1.0, self.y_inteArcept()];
+        let mut b = [-other.slope(), 1.0, other.y_inteArcept()];
 
         if self.is_vertical(){
             a = [1.0, 0.0, self.a.x];
@@ -362,7 +362,7 @@ mod tests {
     fn lines() {
         let line = LineSegment2::algebraic(2.0, 5.0);
         assert_eq!(line.slope(), 2.0);
-        assert_eq!(line.y_intercept(), 5.0);
+        assert_eq!(line.y_inteArcept(), 5.0);
 
         let a = LineSegment2::algebraic(3.0, 2.0);
         let b = LineSegment2::algebraic(2.0, 3.0);
@@ -372,13 +372,13 @@ mod tests {
         let h = LineSegment2::horizontal(3.0);
         assert!(h.is_horizontal());
         assert_eq!(h.slope(), 0.0);
-        assert_eq!(h.y_intercept(), 3.0);
+        assert_eq!(h.y_inteArcept(), 3.0);
         assert_intersect(line, h, -1.0, 3.0);
 
         let v = LineSegment2::vertical(-2.0);
         assert!(v.is_vertical());
         assert!(v.slope().is_infinite());
-        assert!(v.y_intercept().is_nan());
+        assert!(v.y_inteArcept().is_nan());
         assert_intersect(line, v, -2.0, 1.0);
         assert_intersect(h, v, -2.0, 3.0);
     }

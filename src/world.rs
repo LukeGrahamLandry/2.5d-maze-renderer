@@ -1,9 +1,10 @@
+use std::any::Any;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::rc::{Rc, Weak};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
@@ -16,8 +17,8 @@ use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::player::{Player, WorldThing};
 
 pub struct World {
-    pub(crate) regions: Vec<Rc<RefCell<Region>>>,
-    pub(crate) player: Rc<RefCell<Player>>
+    pub(crate) regions: Vec<Shelf<Region>>,
+    pub(crate) player: Shelf<Player>
 }
 
 impl World {
@@ -37,7 +38,7 @@ impl World {
             HitKind::Player { .. } => {}
             HitKind::Wall {hit_wall, ..} => {
                 let new_portal = {
-                    let hit_wall = hit_wall.upgrade().unwrap();
+                    let hit_wall = hit_wall.upgrade();
                     let hit_wall = hit_wall.borrow();
                     let half_portal_direction = hit_wall.line.direction().normalize().scale(10.0);
                     let normal = if direction.dot(&hit_wall.normal) < 0.0 {
@@ -48,7 +49,7 @@ impl World {
                     let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(10.0));
                     let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(10.0));
 
-                    let wall = Wall::new(LineSegment2::of(start_point, end_point), normal, &hit_wall.region.upgrade().unwrap());
+                    let wall = Wall::new(LineSegment2::of(start_point, end_point), normal, &hit_wall.region.upgrade());
                     wall.borrow_mut().material.colour = Colour::new(0.8, 0.3, 0.3);
                     wall
                 };  // Drop the borrow of the hit_wall, incase the ray tracing ran out of depth at a portal. Lets us re-borrow in place_portal.
@@ -71,7 +72,7 @@ impl World {
         }
 
         let player = self.player.borrow();
-        player.needs_render_update.replace(true);
+        *player.needs_render_update.write().unwrap() = true;
         Region::recalculate_lighting(player.region.clone());
     }
 
@@ -88,22 +89,22 @@ impl World {
 
         let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
         let wall = Wall::new(line, line.normal(), &regions[0]);
-        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[1]));
+        wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[1].downgrade());
         regions[0].borrow_mut().walls.push(wall);
 
         let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
         let wall = Wall::new(line, line.normal().negate(), &regions[0]);
-        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[0]));
+        wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[0].downgrade());
         regions[0].borrow_mut().walls.push(wall);
 
         regions[1].borrow_mut().lights.clear();
 
-        regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[1]));
+        regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(regions[1].borrow().walls[1].downgrade());
 
-        regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(Rc::downgrade(&regions[0].borrow().walls[0]));
+        regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(regions[0].borrow().walls[0].downgrade());
 
-        regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[3]));
-        regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[2]));
+        regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(regions[2].borrow().walls[3].downgrade());
+        regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(regions[1].borrow().walls[2].downgrade());
 
         let mut player = Player::new(&regions[0]);
         player.pos.x = 150.0;
@@ -111,9 +112,8 @@ impl World {
         player.update_bounding_box();
         let id = player.id;
 
-        let player = Rc::new(RefCell::new(player));
-        let weak_player = Rc::downgrade(&player);
-        regions[0].borrow_mut().things.insert(id, weak_player);
+        let player = Shelf::new(player);
+        regions[0].borrow_mut().things.insert(id, player.downgrade().to_thing());
 
         Region::recalculate_lighting(player.borrow().region.clone());
 
@@ -122,7 +122,8 @@ impl World {
             regions
         }
     }
-    fn place_portal(&mut self, new_portal: Rc<RefCell<Wall>>, replacing_index: usize, connecting_index: usize) {
+
+    fn place_portal(&mut self, new_portal: Shelf<Wall>, replacing_index: usize, connecting_index: usize) {
         let mut player = self.player.borrow_mut();
 
         // If the player already had a portal placed in this slot, remove it.
@@ -135,13 +136,13 @@ impl World {
         match &player.portals[connecting_index] {
             None => {}
             Some(connecting_portal) => {
-                new_portal.borrow_mut().next_wall = Some(Rc::downgrade(connecting_portal));
-                connecting_portal.borrow_mut().next_wall = Some(Rc::downgrade(&new_portal));
+                new_portal.borrow_mut().next_wall = Some(connecting_portal.downgrade());
+                connecting_portal.borrow_mut().next_wall = Some(new_portal.downgrade());
             }
         }
 
         // Add the new portal to the world.
-        let region = new_portal.borrow().region.upgrade().unwrap();
+        let region = new_portal.borrow().region.upgrade();
         let mut region = region.borrow_mut();
         region.walls.push(new_portal);
     }
@@ -149,17 +150,17 @@ impl World {
 
 #[derive(Debug)]
 pub(crate) struct Region {
-    pub(crate) walls: Vec<Rc<RefCell<Wall>>>,
+    pub(crate) walls: Vec<Shelf<Wall>>,
     pub(crate) floor_material: Material,
-    pub(crate) lights: Vec<Rc<ColumnLight>>,
-    pub(crate) things: HashMap<u64, Weak<RefCell<dyn WorldThing>>>
+    pub(crate) lights: Vec<Arc<ColumnLight>>,
+    pub(crate) things: HashMap<u64, ShelfView<dyn WorldThing>>
 }
 
 impl Region {
-    pub(crate) fn remove_wall(&mut self, wall: &Rc<RefCell<Wall>>){
+    pub(crate) fn remove_wall(&mut self, wall: &Shelf<Wall>){
         let mut to_remove = None;
         for (i, w) in self.walls.iter().enumerate() {
-            if Rc::ptr_eq(wall, w) {
+            if wall.ptr_eq(w) {
                 to_remove = Some(i);
                 break;
             }
@@ -173,8 +174,8 @@ impl Region {
         }
     }
 
-    pub(crate) fn recalculate_lighting(root_region: Rc<RefCell<Region>>){
-        let mut found_lights: HashMap<HashLight, Rc<RefCell<Region>>> = HashMap::new();
+    pub(crate) fn recalculate_lighting(root_region: Shelf<Region>){
+        let mut found_lights: HashMap<HashLight, Shelf<Region>> = HashMap::new();
         let mut found_walls: HashSet<HashWall> = HashSet::new();
 
         Region::find_lights_recursively(root_region.clone(), &mut found_walls, &mut found_lights);
@@ -186,7 +187,7 @@ impl Region {
 
     const PORTAL_SAMPLE_LENGTH: f64 = 1.0 / 5.0;
 
-    pub(crate) fn trace_portal_lights(region: Rc<RefCell<Region>>, light: &Rc<ColumnLight>) {
+    pub(crate) fn trace_portal_lights(region: Shelf<Region>, light: &Arc<ColumnLight>) {
         // For every portal, cast a ray from the light to every point on the portal. The first time one hits, we care.
         for wall in &region.borrow().walls {
             let line = wall.borrow().line;
@@ -202,13 +203,13 @@ impl Region {
                         None => {}
                         Some(path) => {
                             // Save where the light appears relative to the OUT portal.
-                            let next_wall = next_wall.upgrade().unwrap();
+                            let next_wall = next_wall.upgrade();
                             {
                                 let adjusted_origin = Wall::translate(path.line.b, &*wall.borrow(), &*next_wall.borrow());
                                 let adjusted_direction = Wall::rotate(path.line.direction(), &*wall.borrow(), &*next_wall.borrow()).negate();
                                 let line = LineSegment2::from(adjusted_origin, adjusted_direction);
                                 println!("Save light: {:?} at {:?} on {:?}", light, line, next_wall.borrow());
-                                next_wall.borrow_mut().lights.insert(HashLight::of(light), line);
+                                next_wall.borrow_mut().lights.write().unwrap().insert(HashLight::of(light), line);
                             }
 
                             // TODO: the OUT portal now needs to send the light to all the other portals in its region. With some limit on the recursion.
@@ -220,7 +221,7 @@ impl Region {
     }
 
     // TODO: move to ray.rs
-    pub(crate) fn find_shortest_path(region: Rc<RefCell<Region>>, pos: Vector2, wall_normal: Vector2, wall: LineSegment2) -> Option<HitResult> {
+    pub(crate) fn find_shortest_path(region: Shelf<Region>, pos: Vector2, wall_normal: Vector2, wall: LineSegment2) -> Option<HitResult> {
         let sample_count = (wall.length() / Region::PORTAL_SAMPLE_LENGTH).floor();
         let mut shortest_path = None;
         let mut shortest_distance = f64::INFINITY;
@@ -249,7 +250,7 @@ impl Region {
 
     // this doesn't need a recursion limit, because the HashSet prevents loops.
     // TODO: this will just reset everything in the whole world. Need to be smarter about which can see each other.
-    pub(crate) fn find_lights_recursively(region: Rc<RefCell<Region>>, mut found_walls: &mut HashSet<HashWall>, mut found_lights: &mut HashMap<HashLight, Rc<RefCell<Region>>>){
+    pub(crate) fn find_lights_recursively(region: Shelf<Region>, mut found_walls: &mut HashSet<HashWall>, mut found_lights: &mut HashMap<HashLight, Shelf<Region>>){
         for light in &region.borrow().lights {
             found_lights.insert(HashLight::of(light), region.clone());
         }
@@ -259,9 +260,9 @@ impl Region {
                 None => {}
                 Some(next_wall) => {
                     if found_walls.insert(HashWall::of(wall)) {
-                        let next_wall = next_wall.upgrade().unwrap();
+                        let next_wall = next_wall.upgrade();
                         let next_wall = next_wall.borrow();
-                        let next_region = next_wall.region.upgrade().unwrap();
+                        let next_region = next_wall.region.upgrade();
                         Region::find_lights_recursively(next_region.clone(), &mut found_walls, &mut found_lights);
                     }
                 }
@@ -269,16 +270,16 @@ impl Region {
         }
     }
 
-    pub(crate) fn new() -> Rc<RefCell<Region>> {
-        Rc::new(RefCell::new(Region {
+    pub(crate) fn new() -> Shelf<Region> {
+        Shelf::new(Region {
             walls: vec![],
             floor_material: Material::new(0.0, 0.0, 0.0),
             lights: vec![],
             things: HashMap::with_capacity(1)
-        }))
+        })
     }
 
-    fn new_square(x1: f64, y1: f64, x2: f64, y2: f64) -> Rc<RefCell<Region>> {
+    fn new_square(x1: f64, y1: f64, x2: f64, y2: f64) -> Shelf<Region> {
         let region = Region::new();
         {
             let mut m_region = region.borrow_mut();
@@ -299,7 +300,7 @@ impl Region {
                     intensity: Colour::white()
                 }
             };
-            m_region.lights.push(Rc::new(light));
+            m_region.lights.push(Arc::new(light));
         }
 
         region
@@ -310,23 +311,23 @@ impl Region {
 pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
-    pub(crate) region: Weak<RefCell<Region>>,
-    pub(crate) next_wall: Option<Weak<RefCell<Wall>>>,
+    pub(crate) region: ShelfView<Region>,
+    pub(crate) next_wall: Option<ShelfView<Wall>>,
     pub(crate) material: Material,
-    pub(crate) lights: HashMap<HashLight, LineSegment2>  // lights that are on the other side of the portal -> relative position behind the portal
+    pub(crate) lights: RwLock<HashMap<HashLight, LineSegment2>>  // lights that are on the other side of the portal -> relative position behind the portal
 }
 
 impl Wall {
-    pub(crate) fn new(line: LineSegment2, normal: Vector2, region: &Rc<RefCell<Region>>) -> Rc<RefCell<Wall>> {
+    pub(crate) fn new(line: LineSegment2, normal: Vector2, region: &Shelf<Region>) -> Shelf<Wall> {
         let wall = Wall {
-            region: Rc::downgrade(&region),
+            region: region.downgrade(),
             next_wall: None,
             normal,
             line,
             material: Material::new(0.2, 0.8, 0.2),
-            lights: HashMap::new()
+            lights: RwLock::new(HashMap::new())
         };
-        Rc::new(RefCell::new(wall))
+        Shelf::new(wall)
     }
 
     pub(crate) fn is_portal(&self) -> bool {
@@ -359,17 +360,17 @@ impl Wall {
 
 
 #[derive(Debug)]
-pub(crate) struct HashLight(Rc<ColumnLight>);
+pub(crate) struct HashLight(Arc<ColumnLight>);
 
 impl HashLight {
-    fn of(x: &Rc<ColumnLight>) -> HashLight {
+    fn of(x: &Arc<ColumnLight>) -> HashLight {
         HashLight {0: x.clone() }
     }
 }
 
 impl PartialEq for HashLight {
     fn eq(&self, other: &HashLight) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -377,29 +378,29 @@ impl Eq for HashLight {}
 
 impl Hash for HashLight {
     fn hash<H>(&self, hasher: &mut H) where H: Hasher {
-        hasher.write_usize(Rc::as_ptr(&self.0) as usize);
+        hasher.write_usize(Arc::as_ptr(&self.0) as usize);
     }
 }
 
 impl Deref for HashLight {
-    type Target = Rc<ColumnLight>;
+    type Target = Arc<ColumnLight>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-pub(crate) struct HashWall(Rc<RefCell<Wall>>);
+pub(crate) struct HashWall(Shelf<Wall>);
 
 impl HashWall {
-    fn of(x: &Rc<RefCell<Wall>>) -> HashWall {
+    fn of(x: &Shelf<Wall> ) -> HashWall {
         HashWall {0: x.clone() }
     }
 }
 
 impl PartialEq for HashWall {
     fn eq(&self, other: &HashWall) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
+        self.0.ptr_eq(&other.0)
     }
 }
 
@@ -407,14 +408,85 @@ impl Eq for HashWall {}
 
 impl Hash for HashWall {
     fn hash<H>(&self, hasher: &mut H) where H: Hasher {
-        hasher.write_usize(Rc::as_ptr(&self.0) as usize);
+        hasher.write_usize(self.0.hash_ptr());
     }
 }
 
 impl Deref for HashWall {
-    type Target = Rc<RefCell<Wall>>;
+    type Target = Shelf<Wall>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
+
+#[derive(Debug)]
+pub(crate) struct Shelf<T: ?Sized + 'static> {
+    data: Arc<RwLock<T>>,
+}
+
+impl<T: ?Sized> Shelf<T> {
+    pub(crate) fn new(value: T) -> Shelf<T> where T: Sized {
+        Shelf {
+            data: Arc::new(RwLock::new(value))
+        }
+    }
+
+    pub(crate) fn borrow(&self) -> RwLockReadGuard<'_, T> {
+        self.data.read().unwrap()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> RwLockWriteGuard<'_, T> {
+        self.data.write().unwrap()
+    }
+
+    pub(crate) fn downgrade(&self) -> ShelfView<T> {
+        ShelfView {
+            data: Arc::downgrade(&self.data)
+        }
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Shelf<T>) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
+    }
+
+    pub(crate) fn hash_ptr(&self) -> usize {
+        Arc::as_ptr(&self.data) as *const () as usize
+    }
+}
+
+impl<T: ?Sized> Clone for Shelf<T> {
+    fn clone(&self) -> Self {
+        Shelf { data: self.data.clone() }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ShelfView<T: ?Sized> {
+    data: Weak<RwLock<T>>
+}
+
+impl<T: ?Sized> ShelfView<T> {
+    pub(crate) fn upgrade(&self) -> Shelf<T> {
+        Shelf { data: self.data.upgrade().unwrap() }
+    }
+
+    // todo: look at CoerceUnsized
+    pub(crate) fn to_thing(&self) -> ShelfView<dyn WorldThing> where T: 'static + Sized + WorldThing {
+        let data = self.clone().data as Weak<RwLock<dyn WorldThing>>;
+        ShelfView { data }
+    }
+}
+
+
+impl<T> Clone for ShelfView<T> {
+    fn clone(&self) -> Self {
+        ShelfView { data: self.data.clone() }
+    }
+}
+
+unsafe impl<T: ?Sized> Sync for Shelf<T> {}
+unsafe impl<T: ?Sized> Sync for ShelfView<T> {}
+
+
+

@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::f64::consts::PI;
-use std::rc::Rc;
+use std::sync::{Arc, mpsc, RwLock};
+use std::sync::mpsc::Sender;
+use std::thread;
 use sdl2::keyboard::Keycode::V;
 use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
@@ -9,7 +11,7 @@ use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
 
-use crate::world::{Region, Wall, World};
+use crate::world::{Region, Shelf, Wall, World};
 
 const FOV_DEG: i32 = 45;
 const SCREEN_HEIGHT: f64 = 600.0;
@@ -23,49 +25,18 @@ struct ColouredLine {
 }
 
 pub(crate) struct RenderBuffer {
-    width: usize,
-    height: usize,
-    pixels: Vec<(u8, u8, u8)>,
-    current_colour: (u8, u8, u8),
-    pixel_count: u32,
-    offset: Vector2,
-    lines: Vec<LineSegment2>,
-    colours: Vec<(u8, u8, u8)>
+    sender: Sender<ColouredLine>,
+    current_colour: Colour,
+    offset: Vector2
 }
 
 impl RenderBuffer {
-    fn flush(&mut self, canvas: &mut WindowCanvas){
-        println!("Rendering {}x{}={} pixels. Contains {} lines and {} pixels", self.width, self.height, self.width * self.height, self.lines.len(), self.pixel_count);
-        for x in 0..self.width {
-            for y in 0..self.height {
-                let c = self.pixels[(y as usize * self.width) + x];
-                if c == (0, 0, 0) {
-                    continue;
-                }
-                canvas.set_draw_color(c);
-                canvas.draw_point((x as i32, y as i32)).expect("Draw failed.");
-            }
-        }
-
-        for i in 0..self.lines.len() {
-            canvas.set_draw_color(self.colours[i]);
-            canvas.draw_line(self.lines[i].a.sdl(),self.lines[i].b.sdl()).expect("Draw failed.");
-        }
-
-        self.lines.clear();
-        self.colours.clear();
-        self.pixels = vec![(0, 0, 0); self.width * self.height];
-    }
-
-    fn new(width: usize, height: usize, offset: Vector2) -> RenderBuffer {
-        RenderBuffer {
-            width, height, pixels: vec![(0, 0, 0); width * height], current_colour: Colour::black().to_u8(), pixel_count: 0, offset
-            , lines: Vec::with_capacity(60000), colours: Vec::with_capacity(60000)
-        }
+    fn new(sender: Sender<ColouredLine>) -> RenderBuffer {
+        RenderBuffer { sender, current_colour: Colour::black(), offset: Vector2::zero() }
     }
 
     fn set_draw_color(&mut self, colour: Colour){
-        self.current_colour = colour.to_u8();
+        self.current_colour = colour;
     }
 
     fn draw_between(&mut self, start: Vector2, end: Vector2){
@@ -73,25 +44,38 @@ impl RenderBuffer {
     }
 
     fn draw_line(&mut self, line: LineSegment2){
-        let len = line.length();
-        if len > 0.2 && len < 1.5 {
-            let a = line.get_a().subtract(&self.offset);
-            let x = (a.x.round() as usize).min(self.width - 1).max(0);
-            let y = (a.y.round() as usize).min(self.height - 1).max(0);
-            self.pixel_count += 1;
-            self.pixels[(y * self.width) + x] = self.current_colour;
-        } else if line.length().round() > 1.0 {
-            self.lines.push(line);
-            self.colours.push(self.current_colour);
-        }
+        let line = if self.offset.is_zero() {
+            line
+        } else {
+            LineSegment2::of(line.get_a().add(&self.offset), line.get_b().add(&self.offset))
+        };
+
+        self.sender.send(ColouredLine { line, colour: self.current_colour }).expect("Thread failed to sync line render");
     }
 }
 
 pub(crate) fn render2d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
     let player_offset = world.player.borrow().pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
-    let mut the_canvas = RenderBuffer::new(SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize, player_offset);
-    let canvas = &mut the_canvas;
+    let (sender, receiver) = mpsc::channel();
 
+    thread::scope(|s| {
+        {
+            let sender = sender;
+            s.spawn(move || {
+                let mut canvas = RenderBuffer::new(sender.clone());
+                canvas.offset = player_offset.negate();
+                inner_render2d(world, &mut canvas, _delta_time);
+            });
+        }
+
+        for line in receiver {
+            window.set_draw_color(line.colour.to_u8());
+            window.draw_line(line.line.a.sdl(), line.line.b.sdl()).expect("SDL draw failed.");
+        }
+    });
+}
+
+fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
     let half_player_size = 5;
 
     // Draw the regions.
@@ -113,12 +97,12 @@ pub(crate) fn render2d(world: &World, window: &mut WindowCanvas, _delta_time: f6
 
         // Draw walls
         for wall in region.borrow().walls.iter() {
-            let contains_player = Rc::ptr_eq(&world.player.borrow().region, region);
+            let contains_player = world.player.borrow().region.ptr_eq(&region);
             draw_wall_2d(canvas, &wall.borrow(), contains_player);
 
             // Draw saved lights
             let wall = wall.borrow();
-            for (light, fake_location) in &wall.lights {
+            for (light, fake_location) in wall.lights.read().unwrap().iter() {
                 let light_fake_origin = fake_location.get_b();
                 let light_hits_portal_at = fake_location.get_a();
 
@@ -177,8 +161,6 @@ pub(crate) fn render2d(world: &World, window: &mut WindowCanvas, _delta_time: f6
     canvas.set_draw_color(Colour::rgb(255, 0, 0));
     let end = world.player.borrow().pos.add(&world.player.borrow().look_direction.scale(half_player_size as f64));
     canvas.draw_between(world.player.borrow().pos, end);
-
-    the_canvas.flush(window);
 }
 
 fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: bool) {
@@ -219,12 +201,28 @@ fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colou
 }
 
 pub(crate) fn render3d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
-    let mut canvas = RenderBuffer::new(SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize, Vector2::zero());
-    for x in 0..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) {
-        let x = (x as f64 / RESOLUTION_FACTOR) as i32;
-        render_column(world, &mut canvas, x)
-    }
-    canvas.flush(window);
+    let (sender, receiver) = mpsc::channel();
+
+    let thread_count = 8 as usize;
+    thread::scope(|s| {
+        {
+            let sender = sender;
+            for i in 0..thread_count {
+                let mut canvas = RenderBuffer::new(sender.clone());
+                s.spawn(move || {
+                    for x in (i..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) as usize).step_by(thread_count) {
+                        let x = (x as f64 / RESOLUTION_FACTOR) as i32;
+                        render_column(world, &mut canvas, x);
+                    }
+                });
+            }
+        }
+
+        for line in receiver {
+            window.set_draw_color(line.colour.to_u8());
+            window.draw_line(line.line.a.sdl(), line.line.b.sdl()).expect("SDL draw failed.");
+        }
+    });
 }
 
 pub(crate) fn render_column(world: &World, canvas: &mut RenderBuffer, x: i32){
@@ -284,7 +282,7 @@ fn draw_floor_segment(canvas: &mut RenderBuffer, segment: &HitResult, screen_x: 
 // the sample_count should be high enough that we have one past the end to lerp to
 fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
-    let region = segment.region.upgrade().unwrap();
+    let region = segment.region.upgrade();
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
         let pos = ray_line.a.add(&ray_line.direction().normalize().scale(i as f64 * -sample_length));
@@ -294,13 +292,13 @@ fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i3
     samples
 }
 
-fn light_floor_point(region: &Rc<RefCell<Region>>, hit_pos: Vector2) -> Colour {
+fn light_floor_point(region: &Shelf<Region>, hit_pos: Vector2) -> Colour {
     let mut colour = Colour::black();
     for light in &region.borrow().lights {
         colour = colour.add(region.borrow().floor_material.direct_floor_lighting(region, light, hit_pos));
     }
     for wall in &region.borrow().walls {
-        for (light, fake_location) in &wall.borrow().lights {
+        for (light, fake_location) in wall.borrow().lights.read().unwrap().iter() {
             colour = colour.add(region.borrow().floor_material.portal_floor_lighting(region, *fake_location, wall.borrow().line, &light, hit_pos));
         }
     }
@@ -313,7 +311,7 @@ fn draw_wall_3d(player: &Player, canvas: &mut RenderBuffer, hit: &HitResult, ray
     let wall_normal = match &hit.kind {
         HitKind::None { .. } => { ray_direction }
         HitKind::Wall { hit_wall, .. } => {
-            hit_wall.upgrade().unwrap().borrow().normal
+            hit_wall.upgrade().borrow().normal
         }
         HitKind::Player { box_side, .. } => {
             box_side.normal()
@@ -323,14 +321,14 @@ fn draw_wall_3d(player: &Player, canvas: &mut RenderBuffer, hit: &HitResult, ray
     let material = match &hit.kind {
         HitKind::None { .. } => { Material::new(0.0, 0.0, 0.0) }
         HitKind::Wall { hit_wall, .. } => {
-            hit_wall.upgrade().unwrap().borrow().material
+            hit_wall.upgrade().borrow().material
         }
         HitKind::Player { .. } => {
             player.material
         }
     };
 
-    let colour= light_wall_column(&hit.region.upgrade().unwrap(), &hit_point, wall_normal, &material, player, ray_direction, screen_x);
+    let colour= light_wall_column(&hit.region.upgrade(), &hit_point, wall_normal, &material, player, ray_direction, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
     canvas.set_draw_color(colour);
@@ -338,7 +336,7 @@ fn draw_wall_3d(player: &Player, canvas: &mut RenderBuffer, hit: &HitResult, ray
 }
 
 
-fn light_wall_column(region: &Rc<RefCell<Region>>, hit_point: &Vector2, wall_normal: Vector2, material: &Material, player: &Player, ray_direction: Vector2, x: i32) -> Colour {
+fn light_wall_column(region: &Shelf<Region>, hit_point: &Vector2, wall_normal: Vector2, material: &Material, player: &Player, ray_direction: Vector2, x: i32) -> Colour {
     let middle = SCREEN_WIDTH as i32 / 2;
 
     let is_in_middle_half = (x - middle).abs() < (middle / 2);
@@ -351,7 +349,7 @@ fn light_wall_column(region: &Rc<RefCell<Region>>, hit_point: &Vector2, wall_nor
     }
 
     for wall in &region.borrow().walls {
-        for (light, fake_location) in &wall.borrow().lights {
+        for (light, fake_location) in wall.borrow().lights.read().unwrap().iter() {
             colour = colour.add(material.portal_wall_lighting(region, *fake_location, wall.borrow().line, &light, hit_point, wall_normal, &to_eye));
         }
     }

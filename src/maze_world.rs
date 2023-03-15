@@ -1,14 +1,14 @@
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 use maze;
 use crate::material::{Colour, ColumnLight};
 use crate::mth::{LineSegment2, Vector2};
-use crate::player::Player;
-use crate::world::{Region, World, Wall};
+use crate::player::{Player, WorldThing};
+use crate::world::{Region, World, Wall, Shelf, ShelfView};
 
 const SIZE: i32 = 10;
 
-pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Rc<RefCell<Region>>> {
+pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Shelf<Region>> {
     println!("{}", grid.to_string());
     let mut vertical_walls: Vec<LineSegment2> = vec![];
     let mut horizontal_walls: Vec<LineSegment2> = vec![];
@@ -60,7 +60,7 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Rc<RefCe
             Vector2::of((cell_size / 2) as f64, (cell_size / 2) as f64),
         ];
         for light_pos in lights {
-            m_region.lights.push(Rc::new(ColumnLight {
+            m_region.lights.push(Arc::new(ColumnLight {
                 pos: light_pos,
                 intensity: Colour::white()
             }));
@@ -153,8 +153,7 @@ pub(crate) fn shift_the_world(world: &mut World){
     maze::gen::binary_tree::on(&mut grid);
     let regions = maze_to_regions(&grid, cell_size);
 
-    let weak_player = Rc::downgrade(&world.player);
-    regions[0].borrow_mut().things.insert(world.player.borrow().id, weak_player);
+    regions[0].borrow_mut().things.insert(world.player.borrow().id, world.player.downgrade().to_thing());
     world.player.borrow_mut().region = regions[0].clone();
     world.player.borrow_mut().clear_portal(0);
     world.player.borrow_mut().clear_portal(1);
@@ -176,9 +175,8 @@ pub(crate) fn random_maze_world() -> World {
     player.update_bounding_box();
     let id = player.id;
 
-    let player = Rc::new(RefCell::new(player));
-    let weak_player = Rc::downgrade(&player);
-    regions[0].borrow_mut().things.insert(id, weak_player);
+    let player = Shelf::new(player);
+    regions[0].borrow_mut().things.insert(id, player.downgrade().to_thing());
     Region::recalculate_lighting(player.borrow().region.clone());
 
     World {
