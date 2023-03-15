@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::f64::consts::PI;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use sdl2::pixels::Color;
 use sdl2::render::WindowCanvas;
 use crate::material::{Colour, Material};
@@ -246,7 +246,7 @@ fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, ray
         HitKind::Wall { hit_wall, .. } => {
             hit_wall.upgrade().unwrap().borrow().material
         }
-        HitKind::Player { box_side, .. } => {
+        HitKind::Player { .. } => {
             player.material
         }
     };

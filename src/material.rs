@@ -158,6 +158,9 @@ impl Material {
     // f(x) = (1 / (2 * distance)) * x^2
     // f(0) = 0
     // we care about the interval x=(0, height) so answer is just (1 / (2 * distance)) * height^2
+    const LIGHT_PILLAR_HEIGHT_SQUARED: f64 = 25.0;
+    const MAX_FLOOR_LIGHT_DISTANCE: f64 = 75.0 * Material::LIGHT_PILLAR_HEIGHT_SQUARED;
+    const MAX_FLOOR_LIGHT_DISTANCE_SQUARED: f64 = Material::MAX_FLOOR_LIGHT_DISTANCE * Material::MAX_FLOOR_LIGHT_DISTANCE;
     fn floor_lighting(&self, light_intensity: Colour, light_pos: Vector2, hit_point: Vector2, in_shadow: bool) -> Colour {
         let base_colour = self.colour.multiply(light_intensity);
         let ambient_colour = base_colour.scale(self.ambient);
@@ -165,10 +168,14 @@ impl Material {
             return ambient_colour;
         }
 
-        let dist_to_light = light_pos.subtract(&hit_point);
-        let height_of_light = 5.0 as f64;
-        let diffuse_factor = (1.0 / dist_to_light.length()) * (height_of_light.powi(2));
-        let diffuse_colour = base_colour.scale(self.diffuse * diffuse_factor);
+        let dist_to_light_sq = light_pos.subtract(&hit_point).length_sq();
+        let diffuse_colour = if dist_to_light_sq < Material::MAX_FLOOR_LIGHT_DISTANCE_SQUARED {
+            let diffuse_factor = (1.0 / dist_to_light_sq.sqrt()) * Material::LIGHT_PILLAR_HEIGHT_SQUARED;
+            base_colour.scale(self.diffuse * diffuse_factor)
+        } else {
+            Colour::black()
+        };
+
         ambient_colour.add(diffuse_colour)
     }
 }

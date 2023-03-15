@@ -31,6 +31,11 @@ impl Vector2 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 
+    pub fn length_sq(&self) -> f64 {
+        self.x * self.x + self.y * self.y
+    }
+
+
     pub(crate) fn tiny(&self) -> Vector2 {
         self.scale(EPSILON)
     }

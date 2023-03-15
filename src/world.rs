@@ -71,6 +71,7 @@ impl World {
         }
 
         let player = self.player.borrow();
+        player.needs_render_update.replace(true);
         Region::recalculate_lighting(player.region.clone());
     }
 
@@ -79,21 +80,21 @@ impl World {
 
         regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
         regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
-        // regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
+        regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
 
         regions[0].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 50);
         regions[1].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 0);
-        // regions[2].borrow_mut().floor_material.colour = Colour::rgb(0, 0, 50);
+        regions[2].borrow_mut().floor_material.colour = Colour::rgb(150, 0, 50);
 
-        // let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
-        // let wall = Wall::new(line, line.normal(), &regions[0]);
-        // wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[1]));
-        // regions[0].borrow_mut().walls.push(wall);
-        //
-        // let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-        // let wall = Wall::new(line, line.normal().negate(), &regions[0]);
-        // wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[0]));
-        // regions[0].borrow_mut().walls.push(wall);
+        let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
+        let wall = Wall::new(line, line.normal(), &regions[0]);
+        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[1]));
+        regions[0].borrow_mut().walls.push(wall);
+
+        let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
+        let wall = Wall::new(line, line.normal().negate(), &regions[0]);
+        wall.borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[0]));
+        regions[0].borrow_mut().walls.push(wall);
 
         regions[1].borrow_mut().lights.clear();
 
@@ -101,8 +102,8 @@ impl World {
 
         regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(Rc::downgrade(&regions[0].borrow().walls[0]));
 
-        // regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[3]));
-        // regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[2]));
+        regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(Rc::downgrade(&regions[2].borrow().walls[3]));
+        regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(Rc::downgrade(&regions[1].borrow().walls[2]));
 
         let mut player = Player::new(&regions[0]);
         player.pos.x = 150.0;
@@ -179,7 +180,6 @@ impl Region {
         Region::find_lights_recursively(root_region.clone(), &mut found_walls, &mut found_lights);
 
         for (light, region) in found_lights {
-            println!("found light: {:?}", light);
             Region::trace_portal_lights(region, &light);
         }
     }

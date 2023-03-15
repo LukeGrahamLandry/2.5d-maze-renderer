@@ -17,6 +17,8 @@ mod maze_world;
 mod ray;
 mod material;
 
+// TODO: calculate dynamically based on target FPS
+const FRAME_DELAY_MS: u64 = 40;
 
 pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
@@ -38,7 +40,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = World::create_example();
+    let mut world = random_maze_world();
     let mut first_person_rendering = false;
 
     canvas.clear();
@@ -48,6 +50,9 @@ pub fn run() -> Result<(), String> {
 
     let mut start = Instant::now();
 
+    let mut seconds_counter = 0.0;
+    let mut frame_counter = 0;
+    let mut pause_seconds_counter = 0.0;
     'mainloop: loop {
         let mut delta_mouse = 0;
         for event in events.poll_iter() {
@@ -59,10 +64,16 @@ pub fn run() -> Result<(), String> {
                 } => break 'mainloop,
 
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
-                => first_person_rendering = !first_person_rendering,
+                => {
+                    first_person_rendering = !first_person_rendering;
+                    world.player.borrow().needs_render_update.replace(true);
+                },
 
                 Event::KeyDown { keycode: Some(Keycode::R), .. }
-                => shift_the_world(&mut world),
+                => {
+                    shift_the_world(&mut world);
+                    world.player.borrow().needs_render_update.replace(true);
+                },
 
                 Event::MouseButtonDown { mouse_btn, .. } => {
                     world.on_mouse_click(mouse_btn);
@@ -78,23 +89,47 @@ pub fn run() -> Result<(), String> {
         let keys =  events.keyboard_state();
         let keys: Vec<Keycode> = keys.pressed_scancodes().filter_map(Keycode::from_scancode).collect();
         let duration = start.elapsed().as_secs_f64();
+
+        seconds_counter += duration;
+        frame_counter += 1;
+
+        if seconds_counter > 5.0 {
+            let ms_counter = seconds_counter * 1000.0;
+            let frame_time = (ms_counter / (frame_counter as f64)).round() as u64;
+            let fps = (frame_counter as f64 / seconds_counter).round();
+            let total_delay_ms = (frame_counter * FRAME_DELAY_MS) as f64;
+            let sleep_percent = (total_delay_ms / ms_counter * 100.0).round();
+            let pause_percent = (pause_seconds_counter / seconds_counter * 100.0).round();
+            println!("{} fps; {} ms per frame (sleeping {}%, idle {}%)", fps, frame_time, sleep_percent, pause_percent);
+            seconds_counter = 0.0;
+            frame_counter = 0;
+            pause_seconds_counter = 0.0;
+        }
+
         start = Instant::now();
 
-        let sleep_time = std::time::Duration::from_millis(40);
+        let sleep_time = std::time::Duration::from_millis(FRAME_DELAY_MS);
         thread::sleep(sleep_time);
 
         world.update(duration, &keys, delta_mouse);
 
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.clear();
+        // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
+        let needs_render_update = world.player.borrow().needs_render_update.get();
+        if needs_render_update {
+            canvas.set_draw_color(Color::RGB(0, 0, 0));
+            canvas.clear();
 
-        if first_person_rendering {
-            camera::render3d(&world, &mut canvas, duration);
+            if first_person_rendering {
+                camera::render3d(&world, &mut canvas, duration);
+            } else {
+                camera::render2d(&world, &mut canvas, duration);
+            }
+            world.player.borrow().needs_render_update.replace(false);
+
+            canvas.present();
         } else {
-            camera::render2d(&world, &mut canvas, duration);
+            pause_seconds_counter += duration;
         }
-
-        canvas.present();
     }
 
     Ok(())

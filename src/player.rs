@@ -1,13 +1,12 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::fmt::{Debug, Formatter};
-use std::ops::{Deref, DerefMut};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use sdl2::keyboard::Keycode;
-use crate::material::Material;
-use crate::ray::{HitKind, HitResult, VIEW_DIST};
 
+use crate::material::Material;
 use crate::mth::{LineSegment2, Vector2};
+use crate::ray::{HitKind, HitResult, VIEW_DIST};
 use crate::world::{Region, Wall};
 
 pub(crate) struct Player {
@@ -19,7 +18,8 @@ pub(crate) struct Player {
     pub(crate) portals: [Option<Rc<RefCell<Wall>>>; 2],
     pub(crate) bounding_box: [LineSegment2; 4],
     pub(crate) id: u64,
-    pub(crate) material: Material
+    pub(crate) material: Material,
+    pub(crate) needs_render_update: std::cell::Cell<bool>
 }
 
 const MOVE_SPEED: f64 = 100.0;
@@ -128,8 +128,13 @@ impl Player {
         let move_angle = relative_move_direction.normalize().angle() - (PI / 2.0);
         self.look_direction = self.look_direction.rotate(delta_mouse as f64 * TURN_SPEED);
         self.move_direction = self.look_direction.rotate(move_angle);
+        let needs_physics_update = !relative_move_direction.is_zero();
 
-        !relative_move_direction.is_zero()
+        if delta_mouse != 0 || needs_physics_update {
+            self.needs_render_update.replace(true);
+        }
+
+        needs_physics_update
     }
 
     pub(crate) fn clear_portal(&mut self, portal_index: usize) {
@@ -145,6 +150,7 @@ impl Player {
     pub(crate) fn update_bounding_box(&mut self) {
         let s = PLAYER_SIZE / 2.0;
         self.bounding_box = LineSegment2::new_square(self.pos.x - s, self.pos.y - s, self.pos.x + s, self.pos.y + s);
+        self.needs_render_update.replace(true);
     }
 
     pub(crate) fn new(start_region: &Rc<RefCell<Region>>) -> Player {
@@ -157,7 +163,8 @@ impl Player {
             portals: [None, None],
             bounding_box: LineSegment2::new_square(0.0, 0.0, 0.0, 0.0),
             id: 0,
-            material: Material::new(1.0, 0.0, 0.0)
+            material: Material::new(1.0, 0.0, 0.0),
+            needs_render_update: std::cell::Cell::new(true)
         }
     }
 }

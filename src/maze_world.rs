@@ -67,7 +67,6 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Rc<RefCe
         }
         m_region.floor_material.colour = Colour::rgb(100, 100, 150);
     }
-    Region::recalculate_lighting(region.clone());
 
     vec![region]
 }
@@ -161,6 +160,7 @@ pub(crate) fn shift_the_world(world: &mut World){
     world.player.borrow_mut().clear_portal(1);
 
     world.regions = regions;
+    Region::recalculate_lighting(world.player.borrow().region.clone());
 }
 
 pub(crate) fn random_maze_world() -> World {
@@ -179,6 +179,7 @@ pub(crate) fn random_maze_world() -> World {
     let player = Rc::new(RefCell::new(player));
     let weak_player = Rc::downgrade(&player);
     regions[0].borrow_mut().things.insert(id, weak_player);
+    Region::recalculate_lighting(player.borrow().region.clone());
 
     World {
         regions,
