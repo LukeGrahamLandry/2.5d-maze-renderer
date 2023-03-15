@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::sync::{Arc, mpsc, RwLock};
 use std::sync::mpsc::Sender;
-use std::thread;
+use std::{panic, process, thread};
 use sdl2::keyboard::Keycode::V;
 use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
@@ -11,7 +11,8 @@ use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
 
-use crate::world::{Region, Shelf, Wall, World};
+use crate::world::{Region, Wall, World};
+use crate::wrappers::Shelf;
 
 const FOV_DEG: i32 = 45;
 const SCREEN_HEIGHT: f64 = 600.0;
@@ -203,7 +204,7 @@ fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colou
 pub(crate) fn render3d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
     let (sender, receiver) = mpsc::channel();
 
-    let thread_count = 8 as usize;
+    let thread_count = 1 as usize;
     thread::scope(|s| {
         {
             let sender = sender;

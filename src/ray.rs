@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Weak};
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::world::{Region, Shelf, ShelfView, Wall};
+use crate::world::{Region, Wall};
+use crate::wrappers::{Shelf, ShelfView};
 
 const PORTAL_LIMIT: u16 = 15;
 pub const VIEW_DIST: f64 = 1000.0;

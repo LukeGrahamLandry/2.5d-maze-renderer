@@ -4,7 +4,8 @@ use maze;
 use crate::material::{Colour, ColumnLight};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::{Player, WorldThing};
-use crate::world::{Region, World, Wall, Shelf, ShelfView};
+use crate::world::{Region, World, Wall};
+use crate::wrappers::Shelf;
 
 const SIZE: i32 = 10;
 

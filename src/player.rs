@@ -9,7 +9,8 @@ use sdl2::libc::{boolean_t, write};
 use crate::material::Material;
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::{HitKind, HitResult, VIEW_DIST};
-use crate::world::{Region, Shelf, ShelfView, Wall};
+use crate::world::{Region, Wall};
+use crate::wrappers::Shelf;
 
 pub(crate) struct Player {
     pub(crate) pos: Vector2,
