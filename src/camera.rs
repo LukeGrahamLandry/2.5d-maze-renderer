@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::rc::Rc;
-use sdl2::pixels::Color;
+use sdl2::keyboard::Keycode::V;
+use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
@@ -15,18 +16,83 @@ const SCREEN_HEIGHT: f64 = 600.0;
 pub const SCREEN_WIDTH: u32 = 800;
 const RESOLUTION_FACTOR: f64 = 1.0;
 
-
-fn draw_between(canvas: &mut WindowCanvas, start: Vector2, end: Vector2){
-    canvas.draw_line(start.sdl(), end.sdl()).unwrap();
+// TODO: run length encoding for colours might be cool
+struct ColouredLine {
+    colour: Colour,
+    line: LineSegment2
 }
 
-fn draw_line(canvas: &mut WindowCanvas, line: &LineSegment2){
-    draw_between(canvas, line.a, line.b);
+pub(crate) struct RenderBuffer {
+    width: usize,
+    height: usize,
+    pixels: Vec<(u8, u8, u8)>,
+    current_colour: (u8, u8, u8),
+    pixel_count: u32,
+    offset: Vector2,
+    lines: Vec<LineSegment2>,
+    colours: Vec<(u8, u8, u8)>
 }
 
-pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
+impl RenderBuffer {
+    fn flush(&mut self, canvas: &mut WindowCanvas){
+        println!("Rendering {}x{}={} pixels. Contains {} lines and {} pixels", self.width, self.height, self.width * self.height, self.lines.len(), self.pixel_count);
+        for x in 0..self.width {
+            for y in 0..self.height {
+                let c = self.pixels[(y as usize * self.width) + x];
+                if c == (0, 0, 0) {
+                    continue;
+                }
+                canvas.set_draw_color(c);
+                canvas.draw_point((x as i32, y as i32)).expect("Draw failed.");
+            }
+        }
+
+        for i in 0..self.lines.len() {
+            canvas.set_draw_color(self.colours[i]);
+            canvas.draw_line(self.lines[i].a.sdl(),self.lines[i].b.sdl()).expect("Draw failed.");
+        }
+
+        self.lines.clear();
+        self.colours.clear();
+        self.pixels = vec![(0, 0, 0); self.width * self.height];
+    }
+
+    fn new(width: usize, height: usize, offset: Vector2) -> RenderBuffer {
+        RenderBuffer {
+            width, height, pixels: vec![(0, 0, 0); width * height], current_colour: Colour::black().to_u8(), pixel_count: 0, offset
+            , lines: Vec::with_capacity(60000), colours: Vec::with_capacity(60000)
+        }
+    }
+
+    fn set_draw_color(&mut self, colour: Colour){
+        self.current_colour = colour.to_u8();
+    }
+
+    fn draw_between(&mut self, start: Vector2, end: Vector2){
+        self.draw_line(LineSegment2::of(start, end));
+    }
+
+    fn draw_line(&mut self, line: LineSegment2){
+        let len = line.length();
+        if len > 0.2 && len < 1.5 {
+            let a = line.get_a().subtract(&self.offset);
+            let x = (a.x.round() as usize).min(self.width - 1).max(0);
+            let y = (a.y.round() as usize).min(self.height - 1).max(0);
+            self.pixel_count += 1;
+            self.pixels[(y * self.width) + x] = self.current_colour;
+        } else if line.length().round() > 1.0 {
+            self.lines.push(line);
+            self.colours.push(self.current_colour);
+        }
+    }
+}
+
+pub(crate) fn render2d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
+    let player_offset = world.player.borrow().pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
+    let mut the_canvas = RenderBuffer::new(SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize, player_offset);
+    let canvas = &mut the_canvas;
+
     let half_player_size = 5;
-    let offset = world.player.borrow().pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
 
     // Draw the regions.
     for region in world.regions.iter() {
@@ -41,14 +107,14 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
                 let ray_start = light.pos.add(&direction.scale(3.0));
                 let segment = single_ray_trace(ray_start, direction, &region);
 
-                draw_ray_segment_2d(canvas, offset, &segment, hit_colour, miss_colour);
+                draw_ray_segment_2d(canvas, &segment, hit_colour, miss_colour);
             }
         }
 
         // Draw walls
         for wall in region.borrow().walls.iter() {
             let contains_player = Rc::ptr_eq(&world.player.borrow().region, region);
-            draw_wall_2d(canvas, offset, &wall.borrow(), contains_player);
+            draw_wall_2d(canvas, &wall.borrow(), contains_player);
 
             // Draw saved lights
             let wall = wall.borrow();
@@ -56,7 +122,7 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
                 let light_fake_origin = fake_location.get_b();
                 let light_hits_portal_at = fake_location.get_a();
 
-                canvas.set_draw_color(light.intensity.scale(0.2).sdl());
+                canvas.set_draw_color(light.intensity.scale(0.2));
                 for r in 0..ray_count {
                     let direction = Vector2::from_angle(r as f64 * PI / (ray_count as f64 / 2.0), 1.0);
 
@@ -75,13 +141,13 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
                     match line {
                         None => {}
                         Some(line) => {
-                            draw_between(canvas, line.a.subtract(&offset), line.b.subtract(&offset));
+                            canvas.draw_between(line.a, line.b);
                         }
                     }
                 }
 
-                canvas.set_draw_color(light.intensity.scale(1.0).sdl());
-                draw_between(canvas, fake_location.a.subtract(&offset), fake_location.b.subtract(&offset));
+                canvas.set_draw_color(light.intensity.scale(1.0));
+                canvas.draw_between(fake_location.a, fake_location.b);
             }
         }
     }
@@ -97,76 +163,84 @@ pub(crate) fn render2d(world: &World, canvas: &mut WindowCanvas, _delta_time: f6
         let hit_colour = Colour::rgb(150, 150, 0);
         let miss_colour = Colour::rgb(150, 150, 150);
         for segment in &segments {
-            draw_ray_segment_2d(canvas, offset, segment, hit_colour, miss_colour);
+            draw_ray_segment_2d(canvas, segment, hit_colour, miss_colour);
         }
     }
 
     // Draw the player.
-    canvas.set_draw_color(Color::RGB(255, 255, 255));
+    canvas.set_draw_color(Colour::rgb(255, 255, 255));
     for side in &world.player.borrow().bounding_box {
-        draw_between(canvas, side.a.subtract(&offset), side.b.subtract(&offset));
+        canvas.draw_between(side.a, side.b);
     }
 
     // Draw look direction.
-    canvas.set_draw_color(Color::RGB(255, 0, 0));
+    canvas.set_draw_color(Colour::rgb(255, 0, 0));
     let end = world.player.borrow().pos.add(&world.player.borrow().look_direction.scale(half_player_size as f64));
-    draw_between(canvas, world.player.borrow().pos.subtract(&offset), end.subtract(&offset));
+    canvas.draw_between(world.player.borrow().pos, end);
+
+    the_canvas.flush(window);
 }
 
-fn draw_wall_2d(canvas: &mut WindowCanvas, offset: Vector2, wall: &Wall, contains_the_player: bool) {
+fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: bool) {
     let color = if contains_the_player {
         if wall.is_portal() {
-            Color::RGB(0, 255, 255)
+            Colour::rgb(0, 255, 255)
         } else {
-            Color::RGB(0, 255, 0)
+            Colour::rgb(0, 255, 0)
         }
     } else {
         if wall.is_portal() {
-            Color::RGB(0, 155, 15)
+            Colour::rgb(0, 155, 15)
         } else {
-            Color::RGB(0, 0, 255)
+            Colour::rgb(0, 0, 255)
         }
     };
 
     canvas.set_draw_color(color);
-    draw_between(canvas, wall.line.a.subtract(&offset), wall.line.b.subtract(&offset));
+    canvas.draw_between(wall.line.a, wall.line.b);
 
     // Draw normal
-    canvas.set_draw_color(Color::RGB(200, 0, 200));
-    draw_between(canvas, wall.line.middle().subtract(&offset), wall.line.middle().add(&wall.normal.scale(5.0)).subtract(&offset));
+    canvas.set_draw_color(Colour::rgb(200, 0, 200));
+    canvas.draw_between(wall.line.middle(), wall.line.middle().add(&wall.normal.scale(5.0)));
 }
 
-fn draw_ray_segment_2d(canvas: &mut WindowCanvas, offset: Vector2, segment: &HitResult, hit_colour: Colour, miss_colour: Colour) {
+fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colour: Colour, miss_colour: Colour) {
     match segment.kind {
         HitKind::Wall { .. }
          | HitKind::Player { .. } => {
-            canvas.set_draw_color(hit_colour.sdl());
-            draw_between(canvas, segment.line.a.subtract(&offset), segment.line.b.subtract(&offset));
+            canvas.set_draw_color(hit_colour);
+            canvas.draw_between(segment.line.a, segment.line.b);
         }
         HitKind::None => {
-            canvas.set_draw_color(miss_colour.sdl());
-            draw_between(canvas, segment.line.a.subtract(&offset), segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)).subtract(&offset));
+            canvas.set_draw_color(miss_colour);
+            canvas.draw_between(segment.line.a, segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)));
         }
     }
 }
 
-pub(crate) fn render3d(world: &World, canvas: &mut WindowCanvas, _delta_time: f64){
+pub(crate) fn render3d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
+    let mut canvas = RenderBuffer::new(SCREEN_WIDTH as usize, SCREEN_HEIGHT as usize, Vector2::zero());
     for x in 0..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) {
         let x = (x as f64 / RESOLUTION_FACTOR) as i32;
-        let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
-        let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
-
-        let mut cumulative_dist = 0.0;
-        for segment in &segments {
-            draw_floor_segment(canvas, segment, x, cumulative_dist);
-            cumulative_dist += segment.line.length();
-        }
-
-        draw_wall_3d(&world.player.borrow(), canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
+        render_column(world, &mut canvas, x)
     }
+    canvas.flush(window);
 }
 
-fn draw_floor_segment(canvas: &mut WindowCanvas, segment: &HitResult, screen_x: i32, cumulative_dist: f64){
+pub(crate) fn render_column(world: &World, canvas: &mut RenderBuffer, x: i32){
+    let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
+    let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
+
+    let mut cumulative_dist = 0.0;
+    for segment in &segments {
+        draw_floor_segment(canvas, segment, x, cumulative_dist);
+        cumulative_dist += segment.line.length();
+    }
+
+    draw_wall_3d(&world.player.borrow(), canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
+}
+
+fn draw_floor_segment(canvas: &mut RenderBuffer, segment: &HitResult, screen_x: i32, cumulative_dist: f64){
     let ray_line = segment.line;
 
     let length = ray_line.length();
@@ -183,6 +257,7 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, segment: &HitResult, screen_x: 
     let steps_per_unit = 1.0;
     let units_per_step = 1.0 / steps_per_unit;
     let steps_per_sample = (sample_length.round() + 1.0) * steps_per_unit;
+
     for s in 0..sample_count {
         let current = samples[s as usize];
         let next = samples[(s + 1) as usize];
@@ -192,10 +267,14 @@ fn draw_floor_segment(canvas: &mut WindowCanvas, segment: &HitResult, screen_x: 
             let (_, top) = project_to_screen(dist);
             let bottom = last_top;
 
+            if (top - bottom).abs() < 2.0 {
+                continue;
+            }
+
             let t = i as f64 / steps_per_sample;
             let colour = current.lerp(&next, t);  // TODO: its a quadratic not a line.
-            canvas.set_draw_color(colour.sdl());
-            draw_between(canvas, Vector2::of(screen_x as f64, bottom), Vector2::of(screen_x as f64, top));
+            canvas.set_draw_color(colour);
+            canvas.draw_between(Vector2::of(screen_x as f64, bottom), Vector2::of(screen_x as f64, top));
 
             last_top = top;
         }
@@ -229,7 +308,7 @@ fn light_floor_point(region: &Rc<RefCell<Region>>, hit_pos: Vector2) -> Colour {
     colour
 }
 
-fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
+fn draw_wall_3d(player: &Player, canvas: &mut RenderBuffer, hit: &HitResult, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     let hit_point = hit.line.b;
     let wall_normal = match &hit.kind {
         HitKind::None { .. } => { ray_direction }
@@ -254,8 +333,8 @@ fn draw_wall_3d(player: &Player, canvas: &mut WindowCanvas, hit: &HitResult, ray
     let colour= light_wall_column(&hit.region.upgrade().unwrap(), &hit_point, wall_normal, &material, player, ray_direction, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
-    canvas.set_draw_color(colour.sdl());
-    draw_between(canvas, Vector2::of(screen_x as f64, top), Vector2::of(screen_x as f64, bottom));
+    canvas.set_draw_color(colour);
+    canvas.draw_between(Vector2::of(screen_x as f64, top), Vector2::of(screen_x as f64, bottom));
 }
 
 
@@ -307,4 +386,3 @@ fn x_to_angle(screen_x: i32) -> f64{
 pub(crate) fn ray_direction_for_x(screen_x: i32, forwards: &Vector2) -> Vector2 {
     forwards.rotate(x_to_angle(screen_x))
 }
-

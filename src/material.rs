@@ -53,11 +53,15 @@ impl Colour {
         a + (dif * t)
     }
 
-    pub(crate) fn sdl(&self) -> sdl2::pixels::Color {
+    pub(crate) fn to_u8(&self) -> (u8, u8, u8) {
+        if self.r.is_nan() || self.g.is_nan() || self.b.is_nan() {
+            return (255, 255, 255);
+        }
+
         let r = (self.r.min(1.0).max(0.0) * 255.0) as u8;
         let g = (self.g.min(1.0).max(0.0) * 255.0) as u8;
         let b = (self.b.min(1.0).max(0.0) * 255.0) as u8;
-        sdl2::pixels::Color::RGB(r, g, b)
+        (r, g, b)
     }
 }
 
