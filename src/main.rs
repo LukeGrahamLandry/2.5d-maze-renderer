@@ -6,17 +6,18 @@ use std::time::Instant;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
-use crate::maze_world::{random_maze_world, shift_the_world};
+use crate::world_gen::{random_maze_world, shift_the_world};
 use crate::world::{World};
 
 mod world;
 mod player;
 mod camera;
 mod mth;
-mod maze_world;
+mod world_gen;
 mod ray;
 mod material;
 mod wrappers;
+mod world_data;
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 40;

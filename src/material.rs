@@ -6,7 +6,7 @@ use crate::world::{Region};
 use crate::wrappers::Shelf;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-pub(crate) struct Colour {
+pub struct Colour {
     pub(crate) r: f64,
     pub(crate) g: f64,
     pub(crate) b: f64
@@ -67,7 +67,7 @@ impl Colour {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-pub(crate) struct Material {
+pub struct Material {
     pub(crate) colour: Colour,
     pub(crate) ambient: f64,
     pub(crate) diffuse: f64,

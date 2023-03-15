@@ -153,7 +153,7 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &She
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct HitResult {
+pub struct HitResult {
     pub(crate) region: ShelfView<Region>,  // TODO: shouldn't be weak
     pub(crate) line: LineSegment2,
     pub(crate) kind: HitKind

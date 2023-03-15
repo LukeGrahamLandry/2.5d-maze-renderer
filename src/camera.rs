@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::f64::consts::PI;
-use std::sync::{Arc, mpsc, RwLock};
+use std::sync::{Arc, mpsc, RwLock, RwLockReadGuard};
 use std::sync::mpsc::Sender;
 use std::{panic, process, thread};
 use sdl2::keyboard::Keycode::V;
@@ -12,12 +12,13 @@ use crate::player::Player;
 use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
 
 use crate::world::{Region, Wall, World};
-use crate::wrappers::Shelf;
+use crate::wrappers::{HashLight, Shelf};
 
 const FOV_DEG: i32 = 45;
 const SCREEN_HEIGHT: f64 = 600.0;
 pub const SCREEN_WIDTH: u32 = 800;
 const RESOLUTION_FACTOR: f64 = 1.0;
+const LIGHT_RAY_COUNT_2D: i32 = 32;
 
 // TODO: run length encoding for colours might be cool
 struct ColouredLine {
@@ -82,13 +83,12 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
     // Draw the regions.
     for region in world.regions.iter() {
         // Draw lights
-        let ray_count = 128;
         for light in &region.borrow().lights {
             let hit_colour = light.intensity.scale(0.3);
             let miss_colour = light.intensity.scale(0.1);
-            for r in 0..ray_count {
+            for r in 0..LIGHT_RAY_COUNT_2D {
                 // Draw rays
-                let direction = Vector2::from_angle(r as f64 * PI / (ray_count as f64 / 2.0), 1.0);
+                let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
                 let ray_start = light.pos.add(&direction.scale(3.0));
                 let segment = single_ray_trace(ray_start, direction, &region);
 
@@ -104,35 +104,7 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
             // Draw saved lights
             let wall = wall.borrow();
             for (light, fake_location) in wall.lights.read().unwrap().iter() {
-                let light_fake_origin = fake_location.get_b();
-                let light_hits_portal_at = fake_location.get_a();
-
-                canvas.set_draw_color(light.intensity.scale(0.2));
-                for r in 0..ray_count {
-                    let direction = Vector2::from_angle(r as f64 * PI / (ray_count as f64 / 2.0), 1.0);
-
-                    let light_toward_portal = LineSegment2::from(light_fake_origin, direction.scale(100.0));
-                    let point_on_portal = wall.line.algebraic_intersection(&light_toward_portal);
-                    let actually_crosses_portal = wall.line.contains(&point_on_portal);
-                    if !actually_crosses_portal {
-                        continue;
-                    }
-
-                    let direction = point_on_portal.subtract(&light_fake_origin);
-                    let segments = ray_trace(point_on_portal.add(&direction.tiny()), direction, &region);
-                    let wall_hit_point = segments.last().unwrap().line.b;
-
-                    let line = trace_clear_portal_light(*fake_location, wall.line, wall_hit_point, region);
-                    match line {
-                        None => {}
-                        Some(line) => {
-                            canvas.draw_between(line.a, line.b);
-                        }
-                    }
-                }
-
-                canvas.set_draw_color(light.intensity.scale(1.0));
-                canvas.draw_between(fake_location.a, fake_location.b);
+                draw_portal_light_2d(canvas, &wall, light, fake_location, region);
             }
         }
     }
@@ -162,6 +134,38 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
     canvas.set_draw_color(Colour::rgb(255, 0, 0));
     let end = world.player.borrow().pos.add(&world.player.borrow().look_direction.scale(half_player_size as f64));
     canvas.draw_between(world.player.borrow().pos, end);
+}
+
+fn draw_portal_light_2d(canvas: &mut RenderBuffer, wall: &Wall, light: &HashLight, fake_location: &LineSegment2, region: &Shelf<Region>) {
+    let light_fake_origin = fake_location.get_b();
+    let light_hits_portal_at = fake_location.get_a();
+
+    canvas.set_draw_color(light.intensity.scale(0.2));
+    for r in 0..LIGHT_RAY_COUNT_2D {
+        let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
+
+        let light_toward_portal = LineSegment2::from(light_fake_origin, direction.scale(100.0));
+        let point_on_portal = wall.line.algebraic_intersection(&light_toward_portal);
+        let actually_crosses_portal = wall.line.contains(&point_on_portal);
+        if !actually_crosses_portal {
+            continue;
+        }
+
+        let direction = point_on_portal.subtract(&light_fake_origin);
+        let segments = ray_trace(point_on_portal.add(&direction.tiny()), direction, &region);
+        let wall_hit_point = segments.last().unwrap().line.b;
+
+        let line = trace_clear_portal_light(*fake_location, wall.line, wall_hit_point, region);
+        match line {
+            None => {}
+            Some(line) => {
+                canvas.draw_between(line.a, line.b);
+            }
+        }
+    }
+
+    canvas.set_draw_color(light.intensity.scale(1.0));
+    canvas.draw_between(fake_location.a, fake_location.b);
 }
 
 fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: bool) {
@@ -204,7 +208,7 @@ fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colou
 pub(crate) fn render3d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
     let (sender, receiver) = mpsc::channel();
 
-    let thread_count = 1 as usize;
+    let thread_count = 8 as usize;
     thread::scope(|s| {
         {
             let sender = sender;
