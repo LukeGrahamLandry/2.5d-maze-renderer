@@ -1,22 +1,14 @@
-use std::any::Any;
-use std::cell::{Cell, Ref, RefCell, RefMut};
 use std::collections::{HashMap, HashSet};
-use std::f64::consts::PI;
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::rc::Rc;
+
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
-use sdl2::pixels::Color;
-use maze::Pos;
-use crate::camera::{ray_direction_for_x, SCREEN_WIDTH};
-use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_path_between};
-use crate::material::{Material, Colour};
-use crate::shelf::{Shelf, ShelfPtr};
 
+use crate::material::{Colour, Material};
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::world_data::{Region, Wall, World, ColumnLight, WorldThing};
-
+use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_path_between};
+use crate::shelf::{Shelf, ShelfPtr};
+use crate::world_data::{ColumnLight, Region, Wall, World};
 
 impl World {
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
@@ -24,7 +16,7 @@ impl World {
     }
 
     pub(crate) fn on_mouse_click(&mut self, mouse_button: MouseButton) {
-        let direction = ray_direction_for_x((SCREEN_WIDTH / 2) as i32, &self.player.borrow().look_direction);
+        let direction = self.player.borrow().look_direction;
         let segments = ray_trace(self.player.borrow().pos, direction , &self.player.borrow().region.borrow());
         let hit = &segments[segments.len() - 1];
 

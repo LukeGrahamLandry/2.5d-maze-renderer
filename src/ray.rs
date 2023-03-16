@@ -1,7 +1,7 @@
 
 use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::shelf::{ShelfPtr};
-use crate::world_data::{Region, Wall};
+use crate::world_data::{Region, Wall, WorldThing};
 
 const PORTAL_LIMIT: u16 = 15;
 pub const VIEW_DIST: f64 = 1000.0;
@@ -104,7 +104,7 @@ pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall
 pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Region) -> HitResult {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
-    let mut shortest_hit_distance = f64::INFINITY;
+    let mut shortest_hit_distance_squared = f64::INFINITY;
     let mut closest_hit_point = Vector2::NAN;
     let mut hit_wall = None;
 
@@ -112,9 +112,9 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Reg
         let hit = wall.line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
 
-        if !hit.is_nan() && to_hit.length() < shortest_hit_distance {
+        if !hit.is_nan() && to_hit.length_sq() < shortest_hit_distance_squared {
             hit_wall = Some(wall);
-            shortest_hit_distance = to_hit.length();
+            shortest_hit_distance_squared = to_hit.length_sq();
             closest_hit_point = hit;
         }
     }
@@ -140,7 +140,7 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Reg
 
     for (_id, thing) in &region.things {
         let hit = thing.borrow().collide(origin, direction);
-        if hit.dist() < hit_result.dist() {
+        if hit.dist_squared() < hit_result.dist_squared() {
             hit_result = hit;
         }
     }
@@ -164,10 +164,10 @@ impl HitResult {
         }
     }
 
-    fn dist(&self) -> f64 {
+    fn dist_squared(&self) -> f64 {
         match self.kind {
             HitKind::HitNone => { f64::INFINITY }
-            HitKind::HitWall { .. } | HitKind::HitPlayer { .. } => { self.line.length() }
+            HitKind::HitWall { .. } | HitKind::HitPlayer { .. } => { self.line.length_sq() }
         }
     }
 }

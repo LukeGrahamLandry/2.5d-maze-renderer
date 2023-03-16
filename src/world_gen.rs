@@ -148,7 +148,7 @@ pub(crate) fn shift_the_world(world: &mut World){
     maze::gen::binary_tree::on(&mut grid);
     let regions = maze_to_regions(&grid, cell_size);
 
-    regions[0].borrow_mut().things.insert(world.player.borrow().id, world.player.ptr().as_thing());
+    regions[0].borrow_mut().add_thing(world.player.ptr().as_thing());
     world.player.borrow_mut().region = regions[0].ptr();
     world.player.borrow_mut().clear_portal(0);
     world.player.borrow_mut().clear_portal(1);

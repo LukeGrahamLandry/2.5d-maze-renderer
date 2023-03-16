@@ -73,7 +73,8 @@ pub(crate) struct Player {
     id: u64,
     pub(crate) material: Material,
     pub(crate) needs_render_update: RwLock<bool>,
-    pub(crate) myself: ShelfPtr<Player>
+    pub(crate) myself: ShelfPtr<Player>,
+    pub(crate) first_person_rendering: bool
 }
 
 impl World {
@@ -178,7 +179,7 @@ impl Region {
         self.things.remove(&id);
     }
 
-    pub(crate) fn iter_walls<'a>(&'a self) -> Map<Iter<'a, Shelf<Wall>>, fn(&Shelf<Wall>) -> ShelfRef<Wall>> {
+    pub(crate) fn iter_walls(&self) -> Map<Iter<Shelf<Wall>>, fn(&Shelf<Wall>) -> ShelfRef<Wall>> {
         self.walls.iter().map(|w| {
             w.borrow()
         })
@@ -230,7 +231,8 @@ impl Player {
             id: 0,
             material: Material::new(1.0, 0.0, 0.0),
             needs_render_update: RwLock::new(true),
-            myself: ShelfPtr::<Player>::null()
+            myself: ShelfPtr::<Player>::null(),
+            first_person_rendering: false
         }
     }
 }

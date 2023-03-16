@@ -5,19 +5,20 @@ use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use crate::shelf::{lock_shelves, unlock_shelves};
 use crate::world_gen::{example_preset, random_maze_world, shift_the_world};
 
 mod world;
 mod player;
-mod camera;
+mod camera3d;
 mod mth;
 mod world_gen;
 mod ray;
 mod material;
 mod world_data;
 mod shelf;
+mod camera2d;
+mod camera;
+mod test;
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 40;
@@ -43,7 +44,6 @@ pub fn run() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let mut world = random_maze_world();
-    let mut first_person_rendering = false;
 
     canvas.clear();
     canvas.present();
@@ -67,7 +67,7 @@ pub fn run() -> Result<(), String> {
 
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => {
-                    first_person_rendering = !first_person_rendering;
+                    world.player.borrow_mut().first_person_rendering = !world.player.borrow_mut().first_person_rendering;
                     *world.player.borrow().needs_render_update.write().unwrap() = true;
                 },
 
@@ -118,20 +118,7 @@ pub fn run() -> Result<(), String> {
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
         let needs_render_update = *world.player.borrow().needs_render_update.read().unwrap();
         if needs_render_update {
-            canvas.set_draw_color(Color::RGB(0, 0, 0));
-            canvas.clear();
-
-            lock_shelves();
-            if first_person_rendering {
-
-                camera::render3d(&world, &mut canvas, duration);
-            } else {
-                camera::render2d(&world, &mut canvas, duration);
-            }
-            unlock_shelves();
-            *world.player.borrow().needs_render_update.write().unwrap() = false;
-
-            canvas.present();
+            camera::render_scene(&mut canvas, &world, duration);
         } else {
             pause_seconds_counter += duration;
         }
