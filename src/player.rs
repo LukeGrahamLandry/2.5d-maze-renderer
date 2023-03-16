@@ -1,28 +1,27 @@
-use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash, Hasher};
 use std::sync::RwLock;
 use sdl2::keyboard::Keycode;
-use sdl2::libc::{boolean_t, write};
+use sdl2::libc::{write};
 
 use crate::material::Material;
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::{HitKind, HitResult, VIEW_DIST};
-use crate::world::{Region, Wall};
-use crate::wrappers::Shelf;
+use crate::shelf::{Shelf, ShelfPtr};
+use crate::world_data::{Region, Wall, WorldThing};
 
 pub(crate) struct Player {
     pub(crate) pos: Vector2,
     pub(crate) look_direction: Vector2,
     pub(crate) move_direction: Vector2,
-    pub(crate) region: Shelf<Region>,
+    pub(crate) region: ShelfPtr<Region>,
     pub(crate) has_flash_light: bool,
-    pub(crate) portals: [Option<Shelf<Wall>>; 2],
+    pub(crate) portals: [Option<ShelfPtr<Wall>>; 2],
     pub(crate) bounding_box: [LineSegment2; 4],
     pub(crate) id: u64,
     pub(crate) material: Material,
-    pub(crate) needs_render_update: RwLock<bool>
+    pub(crate) needs_render_update: RwLock<bool>,
+    pub(crate) myself: ShelfPtr<Player>
 }
 
 const MOVE_SPEED: f64 = 100.0;
@@ -30,9 +29,9 @@ const TURN_SPEED: f64 = 0.002;
 const PLAYER_SIZE: f64 = 4.0;
 
 impl Player {
-    pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, regions: &Vec<Shelf<Region>>, delta_time: f64, delta_mouse: i32) {
+    pub(crate) fn update(&mut self, pressed: &Vec<Keycode>, delta_time: f64, delta_mouse: i32) {
         if self.update_direction(pressed, delta_mouse) {
-            let move_direction = self.handle_collisions(regions, self.move_direction);
+            let move_direction = self.handle_collisions(self.move_direction);
 
             self.pos.x += move_direction.x * delta_time * MOVE_SPEED;
             self.pos.y += move_direction.y * delta_time * MOVE_SPEED;
@@ -40,7 +39,7 @@ impl Player {
         }
     }
 
-    pub(crate) fn handle_collisions(&mut self, regions: &Vec<Shelf<Region>>, mut move_direction: Vector2) -> Vector2 {
+    pub(crate) fn handle_collisions(&mut self, mut move_direction: Vector2) -> Vector2 {
         let player_size = 11.0;
         let ray = LineSegment2::from(self.pos, move_direction.scale(player_size));
 
@@ -71,20 +70,13 @@ impl Player {
                     if wall.next_wall.is_none() || hit_back || hit_edge {
                         move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
                     } else {
-                        let next_wall = wall.next_wall.as_ref().unwrap().upgrade();
+                        let next_wall = wall.next_wall.as_ref().unwrap();
                         let next_region = next_wall.borrow().region.clone();
 
-                        if !region.ptr_eq(&next_region.upgrade()) {
-                            let player = m_region.things.remove(&self.id);
-                            match player {
-                                None => {
-                                    panic!("Tried to remove player from a region but they weren't there.")
-                                }
-                                Some(player) => {
-                                    next_region.upgrade().borrow_mut().things.insert(self.id, player);
-                                }
-                            }
-                            self.region = next_region.upgrade();
+                        if region != next_region {
+                            region.borrow_mut().remove_thing(self.get_myself());
+                            next_region.borrow_mut().add_thing(self.get_myself());
+                            self.region = next_region;
                         }
 
                         let next_wall = next_wall.borrow();
@@ -98,7 +90,7 @@ impl Player {
         }
 
         if move_direction.length() > 0.1 {
-            self.handle_collisions(regions, move_direction)
+            self.handle_collisions(move_direction)
         } else {
             move_direction
         }
@@ -144,7 +136,7 @@ impl Player {
         match self.portals[portal_index].as_mut() {
             None => {}
             Some(portal) => {
-                portal.borrow_mut().region.upgrade().borrow_mut().remove_wall(&portal);
+                portal.borrow_mut().region.borrow_mut().remove_wall(&portal.borrow());
             }
         }
         self.portals[portal_index] = None;
@@ -161,25 +153,21 @@ impl Player {
             pos: Vector2::zero(),
             look_direction: Vector2::of(0.0, -1.0),
             move_direction: Vector2::zero(),
-            region: start_region.clone(),
+            region: start_region.ptr(),
             has_flash_light: false,
             portals: [None, None],
             bounding_box: LineSegment2::new_square(0.0, 0.0, 0.0, 0.0),
             id: 0,
             material: Material::new(1.0, 0.0, 0.0),
-            needs_render_update: RwLock::new(true)
+            needs_render_update: RwLock::new(true),
+            myself: ShelfPtr::<Player>::null()
         }
     }
 }
 
-pub(crate) trait WorldThing {
-    fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult;
-    fn get_id(&self) -> u64;
-}
-
 impl WorldThing for Player {
     fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult {
-        let empty = HitResult::empty(&self.region, origin, direction);
+        let empty = HitResult::empty(self.region.clone(), origin, direction);
         if origin.subtract(&self.pos).length() < (PLAYER_SIZE / 2.0)  {
             return empty;
         }
@@ -206,9 +194,9 @@ impl WorldThing for Player {
             }
             Some(hit_side) => {
                 HitResult {
-                    region: self.region.downgrade(),
+                    region: self.region.clone(),
                     line: LineSegment2::of(origin, closest_hit_point),
-                    kind: HitKind::Player {
+                    kind: HitKind::HitPlayer {
                         box_side: hit_side.clone()
                     }
                 }
@@ -218,6 +206,18 @@ impl WorldThing for Player {
 
     fn get_id(&self) -> u64 {
         self.id
+    }
+
+    fn get_region(&self) -> ShelfPtr<Region> {
+        self.region.clone()
+    }
+
+    fn set_region(&mut self, region: ShelfPtr<Region>) {
+        self.region = region;
+    }
+
+    fn get_myself(&self) -> Box<ShelfPtr<dyn WorldThing>> {
+        self.myself.as_thing()
     }
 }
 

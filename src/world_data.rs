@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 use crate::ray::HitResult;
-pub use shelf::{Shelf, ShelfPtr};
+use crate::shelf::{Shelf, ShelfPtr};
 
 pub(crate) struct World {
     pub(crate) regions: Vec<Shelf<Region>>,
@@ -14,7 +15,7 @@ pub(crate) struct Region {
     pub(crate) walls: Vec<Shelf<Wall>>,
     pub(crate) myself: ShelfPtr<Region>,
     pub(crate) lights: Vec<Shelf<ColumnLight>>,
-    pub(crate) things: HashMap<u64, ShelfPtr<dyn WorldThing>>,
+    pub(crate) things: HashMap<u64, Box<ShelfPtr<dyn WorldThing>>>,
     pub(crate) floor_material: Material
 }
 
@@ -33,8 +34,8 @@ pub(crate) trait WorldThing {
     fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult;
     fn get_id(&self) -> u64;
     fn get_region(&self) -> ShelfPtr<Region>;
-    fn set_region(&self, region: ShelfPtr<Region>);
-    fn get_myself(&self) -> ShelfPtr<dyn WorldThing>;
+    fn set_region(&mut self, region: ShelfPtr<Region>);
+    fn get_myself(&self) -> Box<ShelfPtr<dyn WorldThing>>;
 }
 
 impl dyn WorldThing {
@@ -51,7 +52,7 @@ pub(crate) struct ColumnLight {
     pub(crate) myself: ShelfPtr<ColumnLight>,
 
     pub(crate) intensity: Colour,
-    pub(crate) position: Vector2
+    pub(crate) pos: Vector2
 }
 
 pub(crate) struct RelativeLight {
@@ -81,7 +82,7 @@ impl Region {
         region
     }
 
-    pub(crate) fn new_wall(&mut self, line: LineSegment2, normal: Vector2, material: Material){
+    pub(crate) fn new_wall(&mut self, line: LineSegment2, normal: Vector2, material: Material) -> ShelfPtr<Wall> {
         let wall = Wall {
             region: self.myself.clone(),
             myself: ShelfPtr::<Wall>::null(),
@@ -94,7 +95,9 @@ impl Region {
 
         let wall = Shelf::new(wall);
         wall.borrow_mut().myself = ShelfPtr::new(&wall);
+        let ptr = wall.ptr();
         self.add_wall(wall);
+        ptr
     }
 
     pub(crate) fn new_light(&mut self, intensity: Colour, position: Vector2){
@@ -102,7 +105,7 @@ impl Region {
             region: self.myself.clone(),
             myself: ShelfPtr::<Wall>::null(),
             intensity,
-            position
+            pos: position
         };
 
         let light = Shelf::new(light);
@@ -130,12 +133,12 @@ impl Region {
         }
     }
 
-    pub(crate) fn add_thing(&mut self, thing: ShelfPtr<dyn WorldThing>) {
+    pub(crate) fn add_thing(&mut self, thing: Box<ShelfPtr<dyn WorldThing>>) {
         let id = thing.borrow().get_id();
         self.things.insert(id, thing);
     }
 
-    pub(crate) fn remove_thing(&mut self, thing: ShelfPtr<dyn WorldThing>) {
+    pub(crate) fn remove_thing(&mut self, thing: Box<ShelfPtr<dyn WorldThing>>) {
         let id = thing.borrow().get_id();
         self.things.remove(&id);
     }
@@ -155,95 +158,9 @@ impl Wall {
     }
 }
 
-mod shelf {
-    use std::cell::{Ref, RefCell, RefMut};
-    use std::hash::{Hash, Hasher};
-    use std::ptr;
-
-    pub struct ShelfPtr<T: ?Sized>(*const RefCell<T>);
-    pub struct Shelf<T: ?Sized>(RefCell<T>);
-
-    impl<T: ?Sized> Shelf<T> {
-        pub(crate) fn new(value: T) -> Shelf<T> where T: Sized {
-            Shelf { 0: RefCell::new(value)}
-        }
-
-        pub(crate) fn borrow(&self) -> Ref<T> {
-            self.0.borrow()
-        }
-
-        pub(crate) fn borrow_mut(&self) -> RefMut<T> {
-            self.0.borrow_mut()
-        }
-
-        pub(crate) fn ptr(&self) -> ShelfPtr<T> {
-            ShelfPtr::new(self)
-        }
-
-        fn raw_ptr(&self) -> *const RefCell<T> {
-            &self.0 as *const RefCell<T>
-        }
-    }
-
-    impl<T: ?Sized> ShelfPtr<T> {
-        pub(crate) fn new(cell: &Shelf<T>) -> ShelfPtr<T> {
-            ShelfPtr { 0: &cell.0 }
-        }
-
-        pub(crate) fn null<A>() -> ShelfPtr<A> {
-            ShelfPtr { 0: ptr::null() }
-        }
-
-        pub(crate) fn borrow(&self) -> Ref<T> {
-            self.get().borrow()
-        }
-
-        pub(crate) fn borrow_mut(&self) -> RefMut<T> {
-            self.get().borrow_mut()
-        }
-
-        fn raw_ptr(&self) -> *const RefCell<T>{
-            unsafe { &*self.0 as *const RefCell<T> }
-        }
-
-        fn get(&self) -> &RefCell<T> {
-            unsafe { &*self.0 }
-        }
-
-        pub(crate) fn is(&self, other: &Shelf<T>) -> bool {
-            other.raw_ptr() == self.raw_ptr()
-        }
-    }
-
-    impl<T> Clone for ShelfPtr<T> {
-        fn clone(&self) -> Self {
-            ShelfPtr {
-                0: self.0.clone()
-            }
-        }
-    }
-
-    impl<T> PartialEq for Shelf<T> {
-        fn eq(&self, other: &Self) -> bool {
-            self.raw_ptr() == other.raw_ptr()
-        }
-    }
-
-    impl<T> PartialEq for ShelfPtr<T> {
-        fn eq(&self, other: &Self) -> bool {
-            self.raw_ptr() == other.raw_ptr()
-        }
-    }
-
-    impl<T> Hash for Shelf<T> {
-        fn hash<H>(&self, hasher: &mut H) where H: Hasher {
-            hasher.write_usize(self.raw_ptr() as usize);
-        }
-    }
-
-    impl<T> Hash for ShelfPtr<T> {
-        fn hash<H>(&self, hasher: &mut H) where H: Hasher {
-            hasher.write_usize(self.raw_ptr() as usize);
-        }
+impl<T> Debug for Shelf<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Shelf")
     }
 }
+

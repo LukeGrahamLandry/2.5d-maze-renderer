@@ -6,8 +6,8 @@ use std::time::Instant;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
-use crate::world_gen::{random_maze_world, shift_the_world};
-use crate::world::{World};
+use crate::shelf::{lock_shelves, Shelf, unlock_shelves};
+use crate::world_gen::{example_preset, random_maze_world, shift_the_world};
 
 mod world;
 mod player;
@@ -16,8 +16,8 @@ mod mth;
 mod world_gen;
 mod ray;
 mod material;
-mod wrappers;
 mod world_data;
+mod shelf;
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 40;
@@ -42,7 +42,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = random_maze_world();
+    let mut world = example_preset();
     let mut first_person_rendering = false;
 
     canvas.clear();
@@ -100,9 +100,9 @@ pub fn run() -> Result<(), String> {
             let frame_time = (ms_counter / (frame_counter as f64)).round() as u64;
             let fps = (frame_counter as f64 / seconds_counter).round();
             let total_delay_ms = (frame_counter * FRAME_DELAY_MS) as f64;
-            let sleep_peArcent = (total_delay_ms / ms_counter * 100.0).round();
-            let pause_peArcent = (pause_seconds_counter / seconds_counter * 100.0).round();
-            println!("{} fps; {} ms per frame (sleeping {}%, idle {}%)", fps, frame_time, sleep_peArcent, pause_peArcent);
+            let sleep_percent = (total_delay_ms / ms_counter * 100.0).round();
+            let pause_percent = (pause_seconds_counter / seconds_counter * 100.0).round();
+            println!("{} fps; {} ms per frame (sleeping {}%, idle {}%)", fps, frame_time, sleep_percent, pause_percent);
             seconds_counter = 0.0;
             frame_counter = 0;
             pause_seconds_counter = 0.0;
@@ -121,11 +121,14 @@ pub fn run() -> Result<(), String> {
             canvas.set_draw_color(Color::RGB(0, 0, 0));
             canvas.clear();
 
+            lock_shelves();
             if first_person_rendering {
+
                 camera::render3d(&world, &mut canvas, duration);
             } else {
                 camera::render2d(&world, &mut canvas, duration);
             }
+            unlock_shelves();
             *world.player.borrow().needs_render_update.write().unwrap() = false;
 
             canvas.present();

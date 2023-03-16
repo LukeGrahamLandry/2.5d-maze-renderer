@@ -10,9 +10,8 @@ use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
 use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
-
-use crate::world::{Region, Wall, World};
-use crate::wrappers::{HashLight, Shelf};
+use crate::shelf::{lock_shelves, SHELF_LOCK, unlock_shelves};
+use crate::world_data::{ColumnLight, Region, Wall, World};
 
 const FOV_DEG: i32 = 45;
 const SCREEN_HEIGHT: f64 = 600.0;
@@ -57,7 +56,7 @@ impl RenderBuffer {
 }
 
 pub(crate) fn render2d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
-    let player_offset = world.player.borrow().pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
+    let player_offset = world.player.peek().pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
     let (sender, receiver) = mpsc::channel();
 
     thread::scope(|s| {
@@ -83,28 +82,29 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
     // Draw the regions.
     for region in world.regions.iter() {
         // Draw lights
-        for light in &region.borrow().lights {
+        for light in &region.peek().lights {
+            let light = light.peek();
             let hit_colour = light.intensity.scale(0.3);
             let miss_colour = light.intensity.scale(0.1);
             for r in 0..LIGHT_RAY_COUNT_2D {
                 // Draw rays
                 let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
                 let ray_start = light.pos.add(&direction.scale(3.0));
-                let segment = single_ray_trace(ray_start, direction, &region);
+                let segment = single_ray_trace(ray_start, direction, region.peek());
 
                 draw_ray_segment_2d(canvas, &segment, hit_colour, miss_colour);
             }
         }
 
         // Draw walls
-        for wall in region.borrow().walls.iter() {
-            let contains_player = world.player.borrow().region.ptr_eq(&region);
-            draw_wall_2d(canvas, &wall.borrow(), contains_player);
+        for wall in region.peek().walls.iter() {
+            let contains_player = world.player.peek().region.is(&region);
+            draw_wall_2d(canvas, &wall.peek(), contains_player);
 
             // Draw saved lights
-            let wall = wall.borrow();
-            for (light, fake_location) in wall.lights.read().unwrap().iter() {
-                draw_portal_light_2d(canvas, &wall, light, fake_location, region);
+            let wall = wall.peek();
+            for light in wall.lights.iter() {
+                draw_portal_light_2d(canvas, &wall, light.parent.peek(), &light.location, region.peek());
             }
         }
     }
@@ -115,8 +115,8 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
             continue;
         }
 
-        let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
-        let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
+        let look_direction = ray_direction_for_x(x, &world.player.peek().look_direction);
+        let segments = ray_trace(world.player.peek().pos, look_direction, &world.player.peek().region.peek());
         let hit_colour = Colour::rgb(150, 150, 0);
         let miss_colour = Colour::rgb(150, 150, 150);
         for segment in &segments {
@@ -126,17 +126,17 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
 
     // Draw the player.
     canvas.set_draw_color(Colour::rgb(255, 255, 255));
-    for side in &world.player.borrow().bounding_box {
+    for side in &world.player.peek().bounding_box {
         canvas.draw_between(side.a, side.b);
     }
 
     // Draw look direction.
     canvas.set_draw_color(Colour::rgb(255, 0, 0));
-    let end = world.player.borrow().pos.add(&world.player.borrow().look_direction.scale(half_player_size as f64));
-    canvas.draw_between(world.player.borrow().pos, end);
+    let end = world.player.peek().pos.add(&world.player.peek().look_direction.scale(half_player_size as f64));
+    canvas.draw_between(world.player.peek().pos, end);
 }
 
-fn draw_portal_light_2d(canvas: &mut RenderBuffer, wall: &Wall, light: &HashLight, fake_location: &LineSegment2, region: &Shelf<Region>) {
+fn draw_portal_light_2d(canvas: &mut RenderBuffer, wall: &Wall, light: &ColumnLight, fake_location: &LineSegment2, region: &Region) {
     let light_fake_origin = fake_location.get_b();
     let light_hits_portal_at = fake_location.get_a();
 
@@ -193,12 +193,12 @@ fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: boo
 
 fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colour: Colour, miss_colour: Colour) {
     match segment.kind {
-        HitKind::Wall { .. }
-         | HitKind::Player { .. } => {
+        HitKind::HitWall { .. }
+         | HitKind::HitPlayer { .. } => {
             canvas.set_draw_color(hit_colour);
             canvas.draw_between(segment.line.a, segment.line.b);
         }
-        HitKind::None => {
+        HitKind::HitNone => {
             canvas.set_draw_color(miss_colour);
             canvas.draw_between(segment.line.a, segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)));
         }
@@ -231,8 +231,8 @@ pub(crate) fn render3d(world: &World, window: &mut WindowCanvas, _delta_time: f6
 }
 
 pub(crate) fn render_column(world: &World, canvas: &mut RenderBuffer, x: i32){
-    let look_direction = ray_direction_for_x(x, &world.player.borrow().look_direction);
-    let segments = ray_trace(world.player.borrow().pos, look_direction, &world.player.borrow().region);
+    let look_direction = ray_direction_for_x(x, &world.player.peek().look_direction);
+    let segments = ray_trace(world.player.peek().pos, look_direction, &world.player.peek().region.peek());
 
     let mut cumulative_dist = 0.0;
     for segment in &segments {
@@ -240,7 +240,7 @@ pub(crate) fn render_column(world: &World, canvas: &mut RenderBuffer, x: i32){
         cumulative_dist += segment.line.length();
     }
 
-    draw_wall_3d(&world.player.borrow(), canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
+    draw_wall_3d(&world.player.peek(), canvas, segments.last().unwrap(), look_direction, cumulative_dist, x);
 }
 
 fn draw_floor_segment(canvas: &mut RenderBuffer, segment: &HitResult, screen_x: i32, cumulative_dist: f64){
@@ -287,24 +287,23 @@ fn draw_floor_segment(canvas: &mut RenderBuffer, segment: &HitResult, screen_x: 
 // the sample_count should be high enough that we have one past the end to lerp to
 fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
-    let region = segment.region.upgrade();
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
         let pos = ray_line.a.add(&ray_line.direction().normalize().scale(i as f64 * -sample_length));
-        samples.push(light_floor_point(&region, pos));
+        samples.push(light_floor_point(segment.region.peek(), pos));
     }
 
     samples
 }
 
-fn light_floor_point(region: &Shelf<Region>, hit_pos: Vector2) -> Colour {
+fn light_floor_point(region: &Region, hit_pos: Vector2) -> Colour {
     let mut colour = Colour::black();
-    for light in &region.borrow().lights {
-        colour = colour.add(region.borrow().floor_material.direct_floor_lighting(region, light, hit_pos));
+    for light in &region.lights {
+        colour = colour.add(region.floor_material.direct_floor_lighting(region, light.peek(), hit_pos));
     }
-    for wall in &region.borrow().walls {
-        for (light, fake_location) in wall.borrow().lights.read().unwrap().iter() {
-            colour = colour.add(region.borrow().floor_material.portal_floor_lighting(region, *fake_location, wall.borrow().line, &light, hit_pos));
+    for wall in &region.walls {
+        for light in wall.peek().lights.iter() {
+            colour = colour.add(region.floor_material.portal_floor_lighting(region, light.location, wall.peek().line, light.parent.peek(), hit_pos));
         }
     }
 
@@ -314,26 +313,26 @@ fn light_floor_point(region: &Shelf<Region>, hit_pos: Vector2) -> Colour {
 fn draw_wall_3d(player: &Player, canvas: &mut RenderBuffer, hit: &HitResult, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     let hit_point = hit.line.b;
     let wall_normal = match &hit.kind {
-        HitKind::None { .. } => { ray_direction }
-        HitKind::Wall { hit_wall, .. } => {
-            hit_wall.upgrade().borrow().normal
+        HitKind::HitNone { .. } => { ray_direction }
+        HitKind::HitWall { hit_wall, .. } => {
+            hit_wall.peek().normal
         }
-        HitKind::Player { box_side, .. } => {
+        HitKind::HitPlayer { box_side, .. } => {
             box_side.normal()
         }
     };
 
     let material = match &hit.kind {
-        HitKind::None { .. } => { Material::new(0.0, 0.0, 0.0) }
-        HitKind::Wall { hit_wall, .. } => {
-            hit_wall.upgrade().borrow().material
+        HitKind::HitNone { .. } => { Material::new(0.0, 0.0, 0.0) }
+        HitKind::HitWall { hit_wall, .. } => {
+            hit_wall.peek().material
         }
-        HitKind::Player { .. } => {
+        HitKind::HitPlayer { .. } => {
             player.material
         }
     };
 
-    let colour= light_wall_column(&hit.region.upgrade(), &hit_point, wall_normal, &material, player, ray_direction, screen_x);
+    let colour= light_wall_column(hit.region.peek(), &hit_point, wall_normal, &material, player, ray_direction, screen_x);
     let (top, bottom) = project_to_screen(cumulative_dist);
 
     canvas.set_draw_color(colour);
@@ -341,7 +340,7 @@ fn draw_wall_3d(player: &Player, canvas: &mut RenderBuffer, hit: &HitResult, ray
 }
 
 
-fn light_wall_column(region: &Shelf<Region>, hit_point: &Vector2, wall_normal: Vector2, material: &Material, player: &Player, ray_direction: Vector2, x: i32) -> Colour {
+fn light_wall_column(region: &Region, hit_point: &Vector2, wall_normal: Vector2, material: &Material, player: &Player, ray_direction: Vector2, x: i32) -> Colour {
     let middle = SCREEN_WIDTH as i32 / 2;
 
     let is_in_middle_half = (x - middle).abs() < (middle / 2);
@@ -349,13 +348,13 @@ fn light_wall_column(region: &Shelf<Region>, hit_point: &Vector2, wall_normal: V
 
     let mut colour = Colour::black();
     let to_eye = ray_direction.negate().normalize();
-    for light in &region.borrow().lights {
-        colour = colour.add(material.direct_wall_lighting(region, &light, hit_point, wall_normal, &to_eye));
+    for light in &region.lights {
+        colour = colour.add(material.direct_wall_lighting(region, light.peek(), hit_point, wall_normal, &to_eye));
     }
 
-    for wall in &region.borrow().walls {
-        for (light, fake_location) in wall.borrow().lights.read().unwrap().iter() {
-            colour = colour.add(material.portal_wall_lighting(region, *fake_location, wall.borrow().line, &light, hit_point, wall_normal, &to_eye));
+    for wall in &region.walls {
+        for light in wall.peek().lights.iter() {
+            colour = colour.add(material.portal_wall_lighting(region, light.location, wall.peek().line, light.parent.peek(), hit_point, wall_normal, &to_eye));
         }
     }
 

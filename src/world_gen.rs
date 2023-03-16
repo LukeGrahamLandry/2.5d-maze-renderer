@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 use maze;
-use crate::material::{Colour, ColumnLight};
+use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::player::{Player, WorldThing};
-use crate::world::{Region, World, Wall};
-use crate::wrappers::Shelf;
+use crate::player::{Player};
+use crate::shelf::Shelf;
+use crate::world_data::{Region, Wall, World, WorldThing};
 
 const SIZE: i32 = 10;
 
@@ -45,12 +45,12 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Shelf<Re
 
     let walls = condense_walls(horizontal_walls, vertical_walls);
 
-    let region = Region::new();
+    let region = Region::new(Material::new(0.5, 0.25, 0.1));
     {
         let mut m_region = region.borrow_mut();
         let count = walls.len();
         for wall in walls {
-            m_region.walls.push(Wall::new(wall, wall.normal(), &region))
+            m_region.new_wall(wall, wall.normal(), Material::new(0.2, 0.8, 0.2));
         }
         println!("Created world for {}x{} maze with {} walls", grid.cols, grid.rows, count);
 
@@ -61,10 +61,7 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Shelf<Re
             Vector2::of((cell_size / 2) as f64, (cell_size / 2) as f64),
         ];
         for light_pos in lights {
-            m_region.lights.push(Arc::new(ColumnLight {
-                pos: light_pos,
-                intensity: Colour::white()
-            }));
+            m_region.new_light(Colour::white(), light_pos);
         }
         m_region.floor_material.colour = Colour::rgb(100, 100, 150);
     }
@@ -154,8 +151,8 @@ pub(crate) fn shift_the_world(world: &mut World){
     maze::gen::binary_tree::on(&mut grid);
     let regions = maze_to_regions(&grid, cell_size);
 
-    regions[0].borrow_mut().things.insert(world.player.borrow().id, world.player.downgrade().to_thing());
-    world.player.borrow_mut().region = regions[0].clone();
+    regions[0].borrow_mut().things.insert(world.player.borrow().id, world.player.ptr().as_thing());
+    world.player.borrow_mut().region = regions[0].ptr();
     world.player.borrow_mut().clear_portal(0);
     world.player.borrow_mut().clear_portal(1);
 
@@ -176,8 +173,10 @@ pub(crate) fn random_maze_world() -> World {
     player.update_bounding_box();
     let id = player.id;
 
+
     let player = Shelf::new(player);
-    regions[0].borrow_mut().things.insert(id, player.downgrade().to_thing());
+    player.borrow_mut().myself = player.ptr();
+    regions[0].borrow_mut().things.insert(id, player.ptr().as_thing());
     Region::recalculate_lighting(player.borrow().region.clone());
 
     World {
@@ -198,23 +197,22 @@ pub(crate) fn example_preset() -> World {
     regions[2].borrow_mut().floor_material.colour = Colour::rgb(150, 0, 50);
 
     let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
-    let wall = Wall::new(line, line.normal(), &regions[0]);
-    wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[1].downgrade());
-    regions[0].borrow_mut().walls.push(wall);
+    let wall = regions[0].borrow_mut().new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
+    wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[1].ptr());
 
     let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-    let wall = Wall::new(line, line.normal().negate(), &regions[0]);
-    wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[0].downgrade());
-    regions[0].borrow_mut().walls.push(wall);
+    let wall = regions[0].borrow_mut().new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
+    wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[0].ptr());
+
 
     regions[1].borrow_mut().lights.clear();
 
-    regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(regions[1].borrow().walls[1].downgrade());
+    regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(regions[1].borrow().walls[1].ptr());
 
-    regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(regions[0].borrow().walls[0].downgrade());
+    regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(regions[0].borrow().walls[0].ptr());
 
-    regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(regions[2].borrow().walls[3].downgrade());
-    regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(regions[1].borrow().walls[2].downgrade());
+    regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(regions[2].borrow().walls[3].ptr());
+    regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(regions[1].borrow().walls[2].ptr());
 
     let mut player = Player::new(&regions[0]);
     player.pos.x = 150.0;
@@ -223,7 +221,8 @@ pub(crate) fn example_preset() -> World {
     let id = player.id;
 
     let player = Shelf::new(player);
-    regions[0].borrow_mut().things.insert(id, player.downgrade().to_thing());
+    player.borrow_mut().myself = player.ptr();
+    regions[0].borrow_mut().things.insert(id, player.ptr().as_thing());
 
     Region::recalculate_lighting(player.borrow().region.clone());
 

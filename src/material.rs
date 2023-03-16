@@ -2,8 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::ray::{ray_trace, trace_clear_path_between, trace_clear_portal_light};
-use crate::world::{Region};
-use crate::wrappers::Shelf;
+use crate::world_data::{ColumnLight, Region};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Colour {
@@ -89,7 +88,7 @@ impl Material {
     // TODO: Feel like these ones that care about the region cause they do ray tracing should go in ray.rs
 
     /// Returns the colour of a certain column on the wall.
-    pub(crate) fn direct_wall_lighting(&self, region: &Shelf<Region>, light: &ColumnLight, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
+    pub(crate) fn direct_wall_lighting(&self, region: &Region, light: &ColumnLight, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
         let dir_to_light = light.pos.subtract(&hit_point).normalize();
         let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
         let eye_on_front = to_eye.dot(&wall_normal) >= EPSILON;
@@ -98,7 +97,7 @@ impl Material {
         self.wall_lighting(light.intensity, light.pos, hit_point, wall_normal, to_eye, in_shadow)
     }
 
-    pub(crate) fn portal_wall_lighting(&self, region: &Shelf<Region>, relative_light: LineSegment2, portal_wall: LineSegment2, light: &ColumnLight, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
+    pub(crate) fn portal_wall_lighting(&self, region: &Region, relative_light: LineSegment2, portal_wall: LineSegment2, light: &ColumnLight, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
         let light_fake_origin = relative_light.get_b();
         let dir_to_light = light_fake_origin.subtract(&hit_point).normalize();
         let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
@@ -143,11 +142,11 @@ impl Material {
     }
 
 
-    pub(crate) fn direct_floor_lighting(&self, region: &Shelf<Region>, light: &ColumnLight, hit_point: Vector2) -> Colour {
+    pub(crate) fn direct_floor_lighting(&self, region: &Region, light: &ColumnLight, hit_point: Vector2) -> Colour {
         self.floor_lighting(light.intensity, light.pos, hit_point, false)
     }
 
-    pub(crate) fn portal_floor_lighting(&self, region: &Shelf<Region>, relative_light: LineSegment2, portal_wall: LineSegment2, light: &ColumnLight, hit_point: Vector2) -> Colour {
+    pub(crate) fn portal_floor_lighting(&self, region: &Region, relative_light: LineSegment2, portal_wall: LineSegment2, light: &ColumnLight, hit_point: Vector2) -> Colour {
         let in_shadow = trace_clear_portal_light(relative_light, portal_wall, hit_point, region).is_none();
 
         self.floor_lighting(light.intensity, relative_light.get_b(), hit_point, in_shadow)
@@ -183,10 +182,4 @@ impl Material {
 
         ambient_colour.add(diffuse_colour)
     }
-}
-
-#[derive(Debug)]
-pub(crate) struct ColumnLight {
-    pub(crate) intensity: Colour,
-    pub(crate) pos: Vector2
 }

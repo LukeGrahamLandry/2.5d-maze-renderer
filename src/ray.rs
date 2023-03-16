@@ -1,24 +1,23 @@
 use std::cell::RefCell;
 use std::sync::{Arc, Weak};
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::world::{Region, Wall};
-use crate::wrappers::{Shelf, ShelfView};
+use crate::shelf::{Shelf, ShelfPtr};
+use crate::world_data::{Region, Wall};
 
 const PORTAL_LIMIT: u16 = 15;
 pub const VIEW_DIST: f64 = 1000.0;
 
 /// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Shelf<Region>) -> Vec<HitResult> {
+pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Region) -> Vec<HitResult> {
     let mut segments = vec![];
 
     let mut segment = single_ray_trace(origin, direction, region);
     for _ in 0..PORTAL_LIMIT {
-        match &segment.kind {
-            HitKind::None { .. }
-            | HitKind::Player { .. } => { break; }
-            HitKind::Wall { hit_wall, .. } => {
-                let wall = hit_wall.upgrade();
-                let wall = wall.borrow();
+        match &segment.kind.clone() {
+            HitKind::HitNone { .. }
+            | HitKind::HitPlayer { .. } => { break; }
+            HitKind::HitWall { hit_wall, .. } => {
+                let wall = hit_wall.borrow();
 
                 match &wall.next_wall {
                     None => { break; }
@@ -31,13 +30,13 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Sh
                         }
 
                         // Go through the portal
-                        let new_wall = new_wall.upgrade();
-                        let new_wall = new_wall.borrow();
+                        let new_wall = new_wall.peek();
                         origin = Wall::translate(segment.line.b, &wall, &new_wall);
                         direction = Wall::rotate(direction, &wall, &new_wall);
 
-                        segments.push(segment);
-                        segment = single_ray_trace(origin.add(&direction), direction, &new_wall.region.upgrade());
+                        segments.push(segment.clone());
+                        let region = new_wall.region.clone();
+                        segment = single_ray_trace(origin.add(&direction), direction, &region.borrow());
                     }
                 }
             }
@@ -48,7 +47,7 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Sh
     segments
 }
 
-pub(crate) fn trace_clear_path_between(origin: Vector2, target: Vector2, region: &Shelf<Region>) -> Option<Vec<HitResult>> {
+pub(crate) fn trace_clear_path_between(origin: Vector2, target: Vector2, region: &Region) -> Option<Vec<HitResult>> {
     let direction = target.subtract(&origin).normalize();
     let segments = ray_trace(origin, direction, region);
     let last_hit = segments.last().unwrap();
@@ -61,7 +60,7 @@ pub(crate) fn trace_clear_path_between(origin: Vector2, target: Vector2, region:
 }
 
 // This could use trace_clear_path_between and check that the vec is only one long but that would waste time tracing through portals that we don't care about.
-pub(crate) fn trace_clear_path_no_portals_between(origin: Vector2, target: Vector2, region: &Shelf<Region>) -> Option<HitResult> {
+pub(crate) fn trace_clear_path_no_portals_between(origin: Vector2, target: Vector2, region: &Region) -> Option<HitResult> {
     let direction = target.subtract(&origin).normalize();
     let last_hit = single_ray_trace(origin, direction, region);
     let has_clear_path = last_hit.line.b.almost_equal(&target);
@@ -78,7 +77,7 @@ pub(crate) fn trace_clear_path_no_portals_between(origin: Vector2, target: Vecto
 // does not go through portals
 /// Sends a ray through a single region without following portals. The ray starts from the far end of the relative_light line.
 /// Returns the ray line segment (from portal to target) if it did not hit any walls after the portal and went through the portal.
-pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall: LineSegment2, target: Vector2, region: &Shelf<Region>) -> Option<LineSegment2> {
+pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall: LineSegment2, target: Vector2, region: &Region) -> Option<LineSegment2> {
     let light_fake_origin = relative_light.get_b();
     let _pos_on_portal_closest_to_fake_light = relative_light.get_a();  // dont care
 
@@ -92,8 +91,7 @@ pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall
     let direction = target.subtract(&ray_hit_portal_pos);
 
     let ray = LineSegment2::from(ray_hit_portal_pos.add(&direction.tiny()), direction.scale(1.0 - (5.0 * EPSILON)));
-    let m_region = region.borrow();
-    for wall in &m_region.walls {
+    for wall in &region.walls {
         let hit = wall.borrow().line.intersection(&ray);
         if !hit.is_nan() {
             return None;
@@ -104,15 +102,14 @@ pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall
 }
 
 /// Sends a ray through a single region until it hits a wall. Without following portals.
-pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Shelf<Region>) -> HitResult {
+pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Region) -> HitResult {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
     let mut shortest_hit_distance = f64::INFINITY;
     let mut closest_hit_point = Vector2::NAN;
     let mut hit_wall = None;
 
-    let m_region = region.borrow();
-    for wall in &m_region.walls {
+    for wall in &region.walls {
         let hit = wall.borrow().line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
 
@@ -126,24 +123,24 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &She
     let mut hit_result = match hit_wall {
         None => {
             HitResult {
-                region: region.downgrade(),
+                region: region.myself.clone(),
                 line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
-                kind: HitKind::None
+                kind: HitKind::HitNone
             }
         }
         Some(hit_wall) => {
             HitResult {
-                region: region.downgrade(),
+                region: region.myself.clone(),
                 line: LineSegment2::of(origin, closest_hit_point),
-                kind: HitKind::Wall {
-                    hit_wall: hit_wall.downgrade()
+                kind: HitKind::HitWall {
+                    hit_wall: hit_wall.ptr()
                 }
             }
         }
     };
 
-    for (_id, thing) in &m_region.things {
-        let hit = thing.upgrade().borrow().collide(origin, direction);
+    for (_id, thing) in &region.things {
+        let hit = thing.borrow().collide(origin, direction);
         if hit.dist() < hit_result.dist() {
             hit_result = hit;
         }
@@ -152,33 +149,33 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &She
     hit_result
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HitResult {
-    pub(crate) region: ShelfView<Region>,  // TODO: shouldn't be weak
+    pub(crate) region: ShelfPtr<Region>,
     pub(crate) line: LineSegment2,
     pub(crate) kind: HitKind
 }
 
 impl HitResult {
-    pub(crate) fn empty(region: &Shelf<Region>, origin: Vector2, direction: Vector2) -> HitResult {
+    pub(crate) fn empty(region: ShelfPtr<Region>, origin: Vector2, direction: Vector2) -> HitResult {
         HitResult  {
-            region: region.downgrade(),
+            region,
             line: LineSegment2::of(origin, origin.add(&direction)),
-            kind: HitKind::None
+            kind: HitKind::HitNone
         }
     }
 
     fn dist(&self) -> f64 {
         match self.kind {
-            HitKind::None => { f64::INFINITY }
-            HitKind::Wall { .. } | HitKind::Player { .. } => { self.line.length() }
+            HitKind::HitNone => { f64::INFINITY }
+            HitKind::HitWall { .. } | HitKind::HitPlayer { .. } => { self.line.length() }
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) enum HitKind {
-    None,
-    Wall { hit_wall: ShelfView<Wall> },
-    Player { box_side: LineSegment2 }
+    HitNone,
+    HitWall { hit_wall: ShelfPtr<Wall> },
+    HitPlayer { box_side: LineSegment2 }
 }
