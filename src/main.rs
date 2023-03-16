@@ -6,7 +6,7 @@ use std::time::Instant;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
-use crate::shelf::{lock_shelves, Shelf, unlock_shelves};
+use crate::shelf::{lock_shelves, unlock_shelves};
 use crate::world_gen::{example_preset, random_maze_world, shift_the_world};
 
 mod world;
@@ -42,7 +42,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = example_preset();
+    let mut world = random_maze_world();
     let mut first_person_rendering = false;
 
     canvas.clear();

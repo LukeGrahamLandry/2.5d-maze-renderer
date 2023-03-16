@@ -57,6 +57,7 @@ impl World {
                         self.update_player_portal(new_portal, 1, 0);
                     }
                     MouseButton::Middle => {
+                        self.player.borrow().region.borrow_mut().remove_wall(&new_portal.borrow());
                         self.player.borrow_mut().clear_portal(0);
                         self.player.borrow_mut().clear_portal(1);
                     }
@@ -83,8 +84,7 @@ impl World {
         match &player.portals[connecting_index] {
             None => {}
             Some(connecting_portal) => {
-                new_portal.borrow_mut().next_wall = Some(connecting_portal.clone());
-                connecting_portal.borrow_mut().next_wall = Some(new_portal);
+                Wall::bidirectional_portal(&mut new_portal.borrow_mut(), &mut connecting_portal.borrow_mut())
             }
         }
     }
@@ -109,7 +109,8 @@ impl Region {
         for wall in &region.borrow().walls {
             let line = wall.borrow().line;
             let normal = wall.borrow().normal;
-            let next_wall = wall.borrow().next_wall.clone();
+            let wall = wall.borrow();
+            let next_wall = wall.get_next_wall();
             match next_wall {
                 // If it's not a portal, we ignore it.
                 None => {}
@@ -119,8 +120,8 @@ impl Region {
                         // If the light doesn't hit it, we ignore it.
                         None => {}
                         Some(path) => {
-                            let adjusted_origin = Wall::translate(path.line.b, &*wall.borrow(), &*next_wall.borrow());
-                            let adjusted_direction = Wall::rotate(path.line.direction(), &*wall.borrow(), &*next_wall.borrow()).negate();
+                            let adjusted_origin = Wall::translate(path.line.b, &*wall, &*next_wall.borrow());
+                            let adjusted_direction = Wall::rotate(path.line.direction(), &*wall, &*next_wall.borrow()).negate();
                             let line = LineSegment2::from(adjusted_origin, adjusted_direction);
 
                             // Save where the light appears relative to the OUT portal.
@@ -165,12 +166,12 @@ impl Region {
     // this doesn't need a recursion limit, because the HashSet prevents loops.
     // TODO: this will just reset everything in the whole world. Need to be smarter about which can see each other.
     pub(crate) fn find_lights_recursively(region: ShelfPtr<Region>, mut found_walls: &mut HashSet<ShelfPtr<Wall>>, mut found_lights: &mut HashMap<ShelfPtr<ColumnLight>, ShelfPtr<Region>>){
-        for light in &region.borrow().lights {
+        for (i, light) in region.borrow().lights.iter().enumerate() {
             found_lights.insert(light.ptr(), region.clone());
         }
 
         for wall in &region.borrow().walls {
-            match &wall.borrow().next_wall {
+            match wall.borrow().get_next_wall() {
                 None => {}
                 Some(next_wall) => {
                     if found_walls.insert(wall.ptr()) {
@@ -189,7 +190,7 @@ impl Region {
 
             let walls = LineSegment2::new_square(x1, y1, x2, y2);
             for i in 0..4 {
-                m_region.new_wall(walls[i], walls[i].normal(), Material::new(0.2, 0.2, 0.9));
+                m_region.new_wall(walls[i], if i % 2 == 0 { walls[i].normal() } else { walls[i].normal().negate() }, Material::new(0.2, 0.2, 0.9));
             }
 
             // Put a light somewhere random so I can see the shading
@@ -207,9 +208,8 @@ impl Region {
 }
 
 impl Wall {
-
     pub(crate) fn is_portal(&self) -> bool {
-        self.next_wall.is_some()
+        self.get_next_wall().is_some()
     }
 
     pub(crate) fn scale_factor(from: &Wall, to: &Wall) -> f64 {

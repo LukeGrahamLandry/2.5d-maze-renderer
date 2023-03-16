@@ -82,7 +82,7 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
     // Draw the regions.
     for region in world.regions.iter() {
         // Draw lights
-        for light in &region.peek().lights {
+        for light in region.peek().lights.iter() {
             let light = light.peek();
             let hit_colour = light.intensity.scale(0.3);
             let miss_colour = light.intensity.scale(0.1);

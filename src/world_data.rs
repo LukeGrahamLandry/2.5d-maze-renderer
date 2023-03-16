@@ -25,7 +25,7 @@ pub(crate) struct Wall {
 
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
-    pub(crate) next_wall: Option<ShelfPtr<Wall>>,
+    next_wall: Option<ShelfPtr<Wall>>,
     pub(crate) material: Material,
     pub(crate) lights: Vec<RelativeLight>
 }
@@ -150,11 +150,19 @@ impl Wall {
         b.next_wall = Some(a.myself.clone());
     }
 
+    pub(crate) fn unidirectional_portal(&mut self, target_portal: ShelfPtr<Wall>){
+        self.next_wall = Some(target_portal.clone());
+    }
+
     pub(crate) fn add_portal_light(&mut self, light: ShelfPtr<ColumnLight>, relative_location: LineSegment2) {
         self.lights.push(RelativeLight {
             parent: light,
             location: relative_location
         });
+    }
+
+    pub(crate) fn get_next_wall(&self) -> Option<&ShelfPtr<Wall>>{
+        self.next_wall.as_ref()
     }
 }
 

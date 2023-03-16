@@ -198,21 +198,16 @@ pub(crate) fn example_preset() -> World {
 
     let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
     let wall = regions[0].borrow_mut().new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
-    wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[1].ptr());
+    wall.borrow_mut().unidirectional_portal(regions[2].borrow().walls[1].ptr());
 
     let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
     let wall = regions[0].borrow_mut().new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
-    wall.borrow_mut().next_wall = Some(regions[2].borrow().walls[0].ptr());
+    wall.borrow_mut().unidirectional_portal(regions[2].borrow().walls[0].ptr());
 
+    Wall::bidirectional_portal(&mut regions[0].borrow_mut().walls[0].borrow_mut(), &mut regions[1].borrow().walls[1].borrow_mut());
 
-    regions[1].borrow_mut().lights.clear();
-
-    regions[0].borrow_mut().walls[0].borrow_mut().next_wall = Some(regions[1].borrow().walls[1].ptr());
-
-    regions[1].borrow_mut().walls[1].borrow_mut().next_wall = Some(regions[0].borrow().walls[0].ptr());
-
-    regions[1].borrow_mut().walls[2].borrow_mut().next_wall = Some(regions[2].borrow().walls[3].ptr());
-    regions[2].borrow_mut().walls[3].borrow_mut().next_wall = Some(regions[1].borrow().walls[2].ptr());
+    regions[1].borrow_mut().walls[2].borrow_mut().unidirectional_portal(regions[2].borrow().walls[3].ptr());
+    regions[2].borrow_mut().walls[3].borrow_mut().unidirectional_portal(regions[1].borrow().walls[2].ptr());
 
     let mut player = Player::new(&regions[0]);
     player.pos.x = 150.0;

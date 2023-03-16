@@ -19,7 +19,7 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Re
             HitKind::HitWall { hit_wall, .. } => {
                 let wall = hit_wall.borrow();
 
-                match &wall.next_wall {
+                match wall.get_next_wall() {
                     None => { break; }
                     Some(new_wall) => {
                         let t = wall.line.t_of(&segment.line.b).abs();
@@ -30,7 +30,7 @@ pub(crate) fn ray_trace(mut origin: Vector2, mut direction: Vector2, region: &Re
                         }
 
                         // Go through the portal
-                        let new_wall = new_wall.peek();
+                        let new_wall = new_wall.borrow();
                         origin = Wall::translate(segment.line.b, &wall, &new_wall);
                         direction = Wall::rotate(direction, &wall, &new_wall);
 

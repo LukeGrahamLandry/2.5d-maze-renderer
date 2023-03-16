@@ -67,10 +67,10 @@ impl Player {
                     let hit_edge = t < 0.01 || t > 0.99;
                     let hit_back = wall.normal.dot(&move_direction) > 0.0;
 
-                    if wall.next_wall.is_none() || hit_back || hit_edge {
+                    if wall.get_next_wall().is_none() || hit_back || hit_edge {
                         move_direction = wall.line.direction().normalize().scale(move_direction.dot(&wall.line.direction().normalize()));
                     } else {
-                        let next_wall = wall.next_wall.as_ref().unwrap();
+                        let next_wall = wall.get_next_wall().unwrap();
                         let next_region = next_wall.borrow().region.clone();
 
                         if region != next_region {
