@@ -8,10 +8,8 @@ use sdl2::rect::Point;
 use sdl2::render::WindowCanvas;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::player::Player;
 use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
-use crate::shelf::{lock_shelves, SHELF_LOCK, unlock_shelves};
-use crate::world_data::{ColumnLight, Region, Wall, World};
+use crate::world_data::{ColumnLight, Player, Region, Wall, World};
 
 const FOV_DEG: i32 = 45;
 const SCREEN_HEIGHT: f64 = 600.0;
@@ -25,14 +23,14 @@ struct ColouredLine {
     line: LineSegment2
 }
 
-pub(crate) struct RenderBuffer {
-    sender: Sender<ColouredLine>,
+pub(crate) struct RenderBuffer<'a> {
     current_colour: Colour,
-    offset: Vector2
+    offset: Vector2,
+    sender: &'a mut dyn FnMut(ColouredLine),
 }
 
-impl RenderBuffer {
-    fn new(sender: Sender<ColouredLine>) -> RenderBuffer {
+impl<'a> RenderBuffer<'a> {
+    fn new(sender: &mut dyn FnMut(ColouredLine)) -> RenderBuffer {
         RenderBuffer { sender, current_colour: Colour::black(), offset: Vector2::zero() }
     }
 
@@ -51,7 +49,7 @@ impl RenderBuffer {
             LineSegment2::of(line.get_a().add(&self.offset), line.get_b().add(&self.offset))
         };
 
-        self.sender.send(ColouredLine { line, colour: self.current_colour }).expect("Thread failed to sync line render");
+        (self.sender)(ColouredLine { line, colour: self.current_colour });
     }
 }
 
@@ -63,7 +61,12 @@ pub(crate) fn render2d(world: &World, window: &mut WindowCanvas, _delta_time: f6
         {
             let sender = sender;
             s.spawn(move || {
-                let mut canvas = RenderBuffer::new(sender.clone());
+                let sender = sender.clone();
+                let mut handler = |line| {
+                    sender.send(line).expect("Failed to send line.");
+                };
+
+                let mut canvas = RenderBuffer::new(&mut handler);
                 canvas.offset = player_offset.negate();
                 inner_render2d(world, &mut canvas, _delta_time);
             });
@@ -97,12 +100,11 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
         }
 
         // Draw walls
-        for wall in region.peek().walls.iter() {
+        for wall in region.peek().iter_walls() {
             let contains_player = world.player.peek().region.is(&region);
-            draw_wall_2d(canvas, &wall.peek(), contains_player);
+            draw_wall_2d(canvas, &wall, contains_player);
 
             // Draw saved lights
-            let wall = wall.peek();
             for light in wall.lights.iter() {
                 draw_portal_light_2d(canvas, &wall, light.parent.peek(), &light.location, region.peek());
             }
@@ -208,24 +210,48 @@ fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colou
 pub(crate) fn render3d(world: &World, window: &mut WindowCanvas, _delta_time: f64){
     let (sender, receiver) = mpsc::channel();
 
-    let thread_count = 8 as usize;
+    let thread_count = 4 as usize;
     thread::scope(|s| {
         {
             let sender = sender;
             for i in 0..thread_count {
-                let mut canvas = RenderBuffer::new(sender.clone());
+                let sender = sender.clone();
                 s.spawn(move || {
+                    let mut line_chunk_size = 500;
+                    let mut lines = Vec::with_capacity(line_chunk_size);
+
                     for x in (i..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) as usize).step_by(thread_count) {
+                        let mut handler = |line| {
+                            lines.push(line);
+                        };
+
+                        let mut canvas = RenderBuffer::new(&mut handler);
+
                         let x = (x as f64 / RESOLUTION_FACTOR) as i32;
                         render_column(world, &mut canvas, x);
+
+                        let size = lines.len();
+                        if size > line_chunk_size {
+                            sender.send(lines).expect("Failed to send lines.");
+                            lines = Vec::with_capacity(size);
+                        }
                     }
+
+                    sender.send(lines).expect("Failed to send lines.");
                 });
             }
+
         }
 
-        for line in receiver {
-            window.set_draw_color(line.colour.to_u8());
-            window.draw_line(line.line.a.sdl(), line.line.b.sdl()).expect("SDL draw failed.");
+        // most lines are really short. from the floor. this is dumb.
+        // lights should memoize the colour value at a certain radius on a given frame.
+        // do the sampling in world space and draw fixed lengths lerping between them.
+
+        for lines in receiver {
+            for line in lines {
+                window.set_draw_color(line.colour.to_u8());
+                window.draw_line(line.line.a.sdl(), line.line.b.sdl()).expect("SDL draw failed.");
+            }
         }
     });
 }
@@ -301,9 +327,9 @@ fn light_floor_point(region: &Region, hit_pos: Vector2) -> Colour {
     for light in &region.lights {
         colour = colour.add(region.floor_material.direct_floor_lighting(region, light.peek(), hit_pos));
     }
-    for wall in &region.walls {
-        for light in wall.peek().lights.iter() {
-            colour = colour.add(region.floor_material.portal_floor_lighting(region, light.location, wall.peek().line, light.parent.peek(), hit_pos));
+    for wall in region.iter_walls() {
+        for light in wall.lights.iter() {
+            colour = colour.add(region.floor_material.portal_floor_lighting(region, light.location, wall.line, light.parent.peek(), hit_pos));
         }
     }
 
@@ -352,9 +378,9 @@ fn light_wall_column(region: &Region, hit_point: &Vector2, wall_normal: Vector2,
         colour = colour.add(material.direct_wall_lighting(region, light.peek(), hit_point, wall_normal, &to_eye));
     }
 
-    for wall in &region.walls {
-        for light in wall.peek().lights.iter() {
-            colour = colour.add(material.portal_wall_lighting(region, light.location, wall.peek().line, light.parent.peek(), hit_point, wall_normal, &to_eye));
+    for wall in region.iter_walls() {
+        for light in wall.lights.iter() {
+            colour = colour.add(material.portal_wall_lighting(region, light.location, wall.line, light.parent.peek(), hit_point, wall_normal, &to_eye));
         }
     }
 

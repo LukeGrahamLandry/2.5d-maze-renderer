@@ -1,7 +1,5 @@
-use std::cell::RefCell;
-use std::sync::Arc;
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::ray::{ray_trace, trace_clear_path_between, trace_clear_portal_light};
+use crate::ray::{trace_clear_path_between, trace_clear_portal_light};
 use crate::world_data::{ColumnLight, Region};
 
 #[derive(PartialEq, Debug, Clone, Copy)]

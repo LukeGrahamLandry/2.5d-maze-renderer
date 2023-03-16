@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::ptr;
-use crate::world_data::WorldThing;
+use crate::world_data::{Wall, WorldThing};
 
 pub struct UnsafeLock {
     locked: bool
@@ -29,7 +29,7 @@ pub struct Shelf<T> {
 
 #[derive(Copy)]
 pub struct ShelfPtr<T: ?Sized> {
-    cell: *const UnsafeCell<T>
+    cell: *const T
 }
 
 // impl<T> Drop for Shelf<T> {
@@ -41,43 +41,58 @@ pub struct ShelfPtr<T: ?Sized> {
 // only if you call lock
 unsafe impl<T> Sync for Shelf<T> {}
 
-pub struct ShelfRef<'b, T: 'b + ?Sized> {
-    ptr: &'b UnsafeCell<T>
+pub struct ShelfRef<T: ?Sized> {
+    ptr: *const T
 }
 
-pub struct ShelfRefMut<'b, T: 'b + ?Sized> {
-    ptr: &'b UnsafeCell<T>
+pub struct ShelfRefMut<T: ?Sized> {
+    ptr: *mut T
 }
 
-impl<T: ?Sized> Deref for ShelfRef<'_, T> {
+
+impl<T> PartialEq for ShelfRefMut<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr == other.ptr
+    }
+}
+
+impl<T> PartialEq for ShelfRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr == other.ptr
+    }
+}
+
+impl<T> Clone for ShelfRef<T> {
+    fn clone(&self) -> Self {
+        ShelfRef { ptr: self.ptr }
+    }
+}
+
+impl<T: ?Sized> Deref for ShelfRef<T> {
     type Target = T;
 
     #[inline]
     fn deref(&self) -> &T {
         unsafe {
-            &*self.ptr.get()
+            &*self.ptr
         }
     }
 }
 
 
-impl<T: ?Sized> Deref for ShelfRefMut<'_, T> {
+impl<T: ?Sized> Deref for ShelfRefMut<T> {
     type Target = T;
 
     #[inline]
     fn deref(&self) -> &T {
-        unsafe {
-            &*self.ptr.get()
-        }
+        unsafe { &*self.ptr }
     }
 }
 
-impl<T: ?Sized> DerefMut for ShelfRefMut<'_, T> {
+impl<T: ?Sized> DerefMut for ShelfRefMut<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe {
-            &mut* self.ptr.get()
-        }
+        unsafe { &mut*self.ptr }
     }
 }
 
@@ -90,7 +105,7 @@ impl<T> Shelf<T> {
     pub(crate) fn borrow(&self) -> ShelfRef<T> {
         unsafe {
             ShelfRef {
-                ptr: &self.cell
+                ptr: self.cell.get()
             }
         }
     }
@@ -101,7 +116,7 @@ impl<T> Shelf<T> {
                 panic!("Cannot borrow_mut while shelves are locked.")
             } else {
                 ShelfRefMut {
-                    ptr: &self.cell
+                    ptr: self.cell.get()
                 }
             }
         }
@@ -128,7 +143,7 @@ impl<T> Shelf<T> {
 
 impl<T: ?Sized> ShelfPtr<T> {
     pub(crate) fn new(cell: &Shelf<T>) -> ShelfPtr<T> where T: Sized {
-        ShelfPtr { cell: cell.cell.as_ref() }
+        ShelfPtr { cell: cell.cell.get() }
     }
 
     pub(crate) fn null<A>() -> ShelfPtr<A> {
@@ -142,7 +157,7 @@ impl<T: ?Sized> ShelfPtr<T> {
 
         unsafe {
            ShelfRef {
-               ptr: &*self.cell
+               ptr: self.cell
            }
         }
     }
@@ -150,7 +165,7 @@ impl<T: ?Sized> ShelfPtr<T> {
     pub(crate) fn peek(&self) -> &T {
         unsafe {
             if SHELF_LOCK.locked {
-                &*self.cell.as_ref().unwrap().get()
+                &*self.cell.as_ref().unwrap()
             } else {
                 panic!("Cannot peek while shelves are unlocked.")
             }
@@ -167,18 +182,14 @@ impl<T: ?Sized> ShelfPtr<T> {
                 panic!("Cannot borrow_mut while shelves are locked.")
             } else {
                 ShelfRefMut {
-                    ptr: &*self.cell
+                    ptr: self.cell as *mut T
                 }
             }
         }
     }
 
     pub(crate) fn raw_ptr(&self) -> *const T{
-        unsafe { &*self.cell.as_ref().unwrap().get() as *const T }
-    }
-
-    fn get(&self) -> &UnsafeCell<T> {
-        unsafe { &*self.cell }
+        unsafe { self.cell }
     }
 
     pub(crate) fn is(&self, other: &Shelf<T>) -> bool where T: Sized {
@@ -227,14 +238,14 @@ impl<T> Hash for ShelfPtr<T> {
     }
 }
 
-// impl<T> Debug for Shelf<T> where T: Debug {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         self.borrow().fmt(f)
-//     }
-// }
+impl<T> Debug for Shelf<T> where T: Debug {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.borrow().fmt(f)
+    }
+}
 
 impl<T> Debug for ShelfPtr<T> where T: Debug {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.borrow().fmt(f)
+        write!(f, "ShelfPtr[{:?}]", self.cell)
     }
 }

@@ -15,7 +15,6 @@ use crate::material::{Material, Colour};
 use crate::shelf::{Shelf, ShelfPtr};
 
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::player::Player;
 use crate::world_data::{Region, Wall, World, ColumnLight, WorldThing};
 
 
@@ -106,10 +105,9 @@ impl Region {
 
     pub(crate) fn trace_portal_lights(region: ShelfPtr<Region>, light: &ColumnLight) {
         // For every portal, cast a ray from the light to every point on the portal. The first time one hits, we care.
-        for wall in &region.borrow().walls {
-            let line = wall.borrow().line;
-            let normal = wall.borrow().normal;
-            let wall = wall.borrow();
+        for wall in region.borrow().iter_walls() {
+            let line = wall.line;
+            let normal = wall.normal;
             let next_wall = wall.get_next_wall();
             match next_wall {
                 // If it's not a portal, we ignore it.
@@ -170,11 +168,11 @@ impl Region {
             found_lights.insert(light.ptr(), region.clone());
         }
 
-        for wall in &region.borrow().walls {
-            match wall.borrow().get_next_wall() {
+        for wall in region.borrow().iter_walls() {
+            match wall.get_next_wall() {
                 None => {}
                 Some(next_wall) => {
-                    if found_walls.insert(wall.ptr()) {
+                    if found_walls.insert(wall.myself.clone()) {
                         let next_wall = next_wall.borrow();
                         Region::find_lights_recursively(next_wall.region.clone(), &mut found_walls, &mut found_lights);
                     }
@@ -195,8 +193,8 @@ impl Region {
 
             // Put a light somewhere random so I can see the shading
             let (pos, intensity) = {
-                let wall0 = m_region.walls[0].borrow();
-                let wall2 = m_region.walls[2].borrow();
+                let wall0 = m_region.get_wall(0);
+                let wall2 = m_region.get_wall(2);
                 let pos = wall0.line.a.add(&wall0.line.direction().scale(-0.25).add(&wall2.line.direction().scale(-0.25)));
                 (pos, Colour::white())
             };

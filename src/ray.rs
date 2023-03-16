@@ -1,7 +1,6 @@
-use std::cell::RefCell;
-use std::sync::{Arc, Weak};
+
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::shelf::{Shelf, ShelfPtr};
+use crate::shelf::{ShelfPtr};
 use crate::world_data::{Region, Wall};
 
 const PORTAL_LIMIT: u16 = 15;
@@ -91,8 +90,8 @@ pub(crate) fn trace_clear_portal_light(relative_light: LineSegment2, portal_wall
     let direction = target.subtract(&ray_hit_portal_pos);
 
     let ray = LineSegment2::from(ray_hit_portal_pos.add(&direction.tiny()), direction.scale(1.0 - (5.0 * EPSILON)));
-    for wall in &region.walls {
-        let hit = wall.borrow().line.intersection(&ray);
+    for wall in region.iter_walls() {
+        let hit = wall.line.intersection(&ray);
         if !hit.is_nan() {
             return None;
         }
@@ -109,8 +108,8 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Reg
     let mut closest_hit_point = Vector2::NAN;
     let mut hit_wall = None;
 
-    for wall in &region.walls {
-        let hit = wall.borrow().line.intersection(&ray);
+    for wall in region.iter_walls() {
+        let hit = wall.line.intersection(&ray);
         let to_hit = origin.subtract(&hit);
 
         if !hit.is_nan() && to_hit.length() < shortest_hit_distance {
@@ -133,7 +132,7 @@ pub(crate) fn single_ray_trace(origin: Vector2, direction: Vector2, region: &Reg
                 region: region.myself.clone(),
                 line: LineSegment2::of(origin, closest_hit_point),
                 kind: HitKind::HitWall {
-                    hit_wall: hit_wall.ptr()
+                    hit_wall: hit_wall.myself.clone()
                 }
             }
         }

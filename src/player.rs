@@ -2,27 +2,12 @@ use std::f64::consts::PI;
 use std::fmt::{Debug, Formatter};
 use std::sync::RwLock;
 use sdl2::keyboard::Keycode;
-use sdl2::libc::{write};
 
 use crate::material::Material;
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::{HitKind, HitResult, VIEW_DIST};
-use crate::shelf::{Shelf, ShelfPtr};
-use crate::world_data::{Region, Wall, WorldThing};
-
-pub(crate) struct Player {
-    pub(crate) pos: Vector2,
-    pub(crate) look_direction: Vector2,
-    pub(crate) move_direction: Vector2,
-    pub(crate) region: ShelfPtr<Region>,
-    pub(crate) has_flash_light: bool,
-    pub(crate) portals: [Option<ShelfPtr<Wall>>; 2],
-    pub(crate) bounding_box: [LineSegment2; 4],
-    pub(crate) id: u64,
-    pub(crate) material: Material,
-    pub(crate) needs_render_update: RwLock<bool>,
-    pub(crate) myself: ShelfPtr<Player>
-}
+use crate::shelf::{ShelfPtr};
+use crate::world_data::{Player, Region, Wall, WorldThing};
 
 const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
@@ -45,23 +30,20 @@ impl Player {
 
         {
             let mut wall = None;
-            let region = self.region.clone();
-            let mut m_region = region.borrow_mut();
-            {
-                for check_wall in m_region.walls.iter() {
-                    let hit_pos = check_wall.borrow().line.intersection(&ray);
-                    if !hit_pos.is_nan(){
-                        wall = Some(check_wall.clone());
-                    }
+            let region = self.region.borrow();
+            for check_wall in region.iter_walls() {
+                let hit_pos = check_wall.line.intersection(&ray);
+                if !hit_pos.is_nan() {
+                    wall = Some(check_wall.clone());
                 }
             }
+
 
             match wall {
                 None => {
                     return move_direction
                 }
                 Some(wall) => {
-                    let wall = wall.borrow();
                     let hit_pos = wall.line.intersection(&ray);
                     let t = wall.line.t_of(&hit_pos).abs();
                     let hit_edge = t < 0.01 || t > 0.99;
@@ -73,8 +55,8 @@ impl Player {
                         let next_wall = wall.get_next_wall().unwrap();
                         let next_region = next_wall.borrow().region.clone();
 
-                        if region != next_region {
-                            region.borrow_mut().remove_thing(self.get_myself());
+                        if self.region != next_region {
+                            self.region.borrow_mut().remove_thing(self.get_myself());
                             next_region.borrow_mut().add_thing(self.get_myself());
                             self.region = next_region;
                         }
@@ -148,25 +130,7 @@ impl Player {
         *self.needs_render_update.write().unwrap() = true;
     }
 
-    pub(crate) fn new(start_region: &Shelf<Region>) -> Player {
-        Player {
-            pos: Vector2::zero(),
-            look_direction: Vector2::of(0.0, -1.0),
-            move_direction: Vector2::zero(),
-            region: start_region.ptr(),
-            has_flash_light: false,
-            portals: [None, None],
-            bounding_box: LineSegment2::new_square(0.0, 0.0, 0.0, 0.0),
-            id: 0,
-            material: Material::new(1.0, 0.0, 0.0),
-            needs_render_update: RwLock::new(true),
-            myself: ShelfPtr::<Player>::null()
-        }
-    }
-}
-
-impl WorldThing for Player {
-    fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult {
+    pub(crate) fn collide_bounding_box(&self, origin: Vector2, direction: Vector2) -> HitResult {
         let empty = HitResult::empty(self.region.clone(), origin, direction);
         if origin.subtract(&self.pos).length() < (PLAYER_SIZE / 2.0)  {
             return empty;
@@ -202,27 +166,5 @@ impl WorldThing for Player {
                 }
             }
         }
-    }
-
-    fn get_id(&self) -> u64 {
-        self.id
-    }
-
-    fn get_region(&self) -> ShelfPtr<Region> {
-        self.region.clone()
-    }
-
-    fn set_region(&mut self, region: ShelfPtr<Region>) {
-        self.region = region;
-    }
-
-    fn get_myself(&self) -> Box<ShelfPtr<dyn WorldThing>> {
-        self.myself.as_thing()
-    }
-}
-
-impl Debug for dyn WorldThing {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WorldThing")
     }
 }

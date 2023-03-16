@@ -1,11 +1,8 @@
-use std::cell::RefCell;
-use std::sync::Arc;
 use maze;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::player::{Player};
-use crate::shelf::Shelf;
-use crate::world_data::{Region, Wall, World, WorldThing};
+use crate::shelf::{Shelf, ShelfRefMut};
+use crate::world_data::{Region, Wall, World};
 
 const SIZE: i32 = 10;
 
@@ -167,62 +164,35 @@ pub(crate) fn random_maze_world() -> World {
     maze::gen::binary_tree::on(&mut grid);
     let regions = maze_to_regions(&grid, cell_size);
 
-    let mut player = Player::new(&regions[0]);
-    player.pos.x = (cell_size / 2) as f64;
-    player.pos.y = (cell_size / 2) as f64;
-    player.update_bounding_box();
-    let id = player.id;
-
-
-    let player = Shelf::new(player);
-    player.borrow_mut().myself = player.ptr();
-    regions[0].borrow_mut().things.insert(id, player.ptr().as_thing());
-    Region::recalculate_lighting(player.borrow().region.clone());
-
-    World {
-        regions,
-        player
-    }
+    World::new(regions, 0, (cell_size / 2) as f64, (cell_size / 2) as f64)
 }
 
 pub(crate) fn example_preset() -> World {
     let mut regions = vec![];
 
+
     regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
     regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
     regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
 
-    regions[0].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 50);
-    regions[1].borrow_mut().floor_material.colour = Colour::rgb(0, 50, 0);
-    regions[2].borrow_mut().floor_material.colour = Colour::rgb(150, 0, 50);
+    {
+        let mut regions: Vec<ShelfRefMut<Region>> = regions.iter().map(|r| r.borrow_mut()).collect();
 
-    let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
-    let wall = regions[0].borrow_mut().new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
-    wall.borrow_mut().unidirectional_portal(regions[2].borrow().walls[1].ptr());
+        regions[0].floor_material.colour = Colour::rgb(0, 50, 50);
+        regions[1].floor_material.colour = Colour::rgb(0, 50, 0);
+        regions[2].floor_material.colour = Colour::rgb(150, 0, 50);
 
-    let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-    let wall = regions[0].borrow_mut().new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
-    wall.borrow_mut().unidirectional_portal(regions[2].borrow().walls[0].ptr());
+        let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
+        let wall = regions[0].new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
+        wall.borrow_mut().unidirectional_portal(&*regions[2].get_wall(1));
 
-    Wall::bidirectional_portal(&mut regions[0].borrow_mut().walls[0].borrow_mut(), &mut regions[1].borrow().walls[1].borrow_mut());
+        let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
+        let wall = regions[0].new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
+        wall.borrow_mut().unidirectional_portal(&*regions[2].get_wall(0));
 
-    regions[1].borrow_mut().walls[2].borrow_mut().unidirectional_portal(regions[2].borrow().walls[3].ptr());
-    regions[2].borrow_mut().walls[3].borrow_mut().unidirectional_portal(regions[1].borrow().walls[2].ptr());
-
-    let mut player = Player::new(&regions[0]);
-    player.pos.x = 150.0;
-    player.pos.y = 250.0;
-    player.update_bounding_box();
-    let id = player.id;
-
-    let player = Shelf::new(player);
-    player.borrow_mut().myself = player.ptr();
-    regions[0].borrow_mut().things.insert(id, player.ptr().as_thing());
-
-    Region::recalculate_lighting(player.borrow().region.clone());
-
-    World {
-        player,
-        regions
+        Wall::bidirectional_portal(&mut regions[0].mut_wall(0), &mut regions[1].mut_wall(1));
+        Wall::bidirectional_portal(&mut* regions[1].mut_wall(2), &mut* regions[2].mut_wall(3));
     }
+
+    World::new(regions, 0, 150.0, 250.0)
 }
