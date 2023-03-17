@@ -1,7 +1,7 @@
 
 use crate::mth::{EPSILON, LineSegment2, Vector2};
-use crate::shelf::{ShelfPtr};
-use crate::world_data::{Region, Wall, WorldThing};
+use crate::shelf::ShelfPtr;
+use crate::world_data::{WorldThing, Region, Wall};
 
 const PORTAL_LIMIT: u16 = 15;
 pub const VIEW_DIST: f64 = 1000.0;

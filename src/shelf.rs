@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell, RefMut, UnsafeCell};
+use std::cell::{UnsafeCell};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
@@ -103,10 +103,8 @@ impl<T> Shelf<T> {
     }
 
     pub(crate) fn borrow(&self) -> ShelfRef<T> {
-        unsafe {
-            ShelfRef {
-                ptr: self.cell.get()
-            }
+        ShelfRef {
+            ptr: self.cell.get()
         }
     }
 
@@ -155,10 +153,8 @@ impl<T: ?Sized> ShelfPtr<T> {
             panic!("cannot borrow null");
         }
 
-        unsafe {
-           ShelfRef {
-               ptr: self.cell
-           }
+        ShelfRef {
+            ptr: self.cell
         }
     }
 
@@ -189,7 +185,7 @@ impl<T: ?Sized> ShelfPtr<T> {
     }
 
     pub(crate) fn raw_ptr(&self) -> *const T{
-        unsafe { self.cell }
+        self.cell
     }
 
     pub(crate) fn is(&self, other: &Shelf<T>) -> bool where T: Sized {

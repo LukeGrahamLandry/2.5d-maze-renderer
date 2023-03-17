@@ -96,7 +96,7 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
 
 fn draw_portal_light_2d(canvas: &mut RenderBuffer, wall: &Wall, light: &ColumnLight, fake_location: &LineSegment2, region: &Region) {
     let light_fake_origin = fake_location.get_b();
-    let light_hits_portal_at = fake_location.get_a();
+    let _light_hits_portal_at = fake_location.get_a();
 
     canvas.set_draw_color(light.intensity.scale(0.2));
     for r in 0..LIGHT_RAY_COUNT_2D {

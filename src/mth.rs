@@ -1,4 +1,3 @@
-use std::f64::consts::PI;
 use std::fmt;
 
 use sdl2::libc::c_int;
@@ -69,8 +68,8 @@ impl Vector2 {
         Vector2::of(0.0, 0.0).subtract(self)
     }
 
-    pub(crate) fn from_angle(radians_around_unit_ciArcle: f64, length: f64) -> Vector2 {
-        Vector2::of(radians_around_unit_ciArcle.cos() * length, radians_around_unit_ciArcle.sin() * length)
+    pub(crate) fn from_angle(radians_around_unit_circle: f64, length: f64) -> Vector2 {
+        Vector2::of(radians_around_unit_circle.cos() * length, radians_around_unit_circle.sin() * length)
     }
 
     pub(crate) fn rotate(&self, delta_radians: f64) -> Vector2 {
@@ -85,7 +84,7 @@ impl Vector2 {
         self.rotate(new_forward_basis.angle())
     }
 
-    // Get this vector's angle around the unit ciArcle.
+    // Get this vector's angle around the unit circle.
     pub(crate) fn angle(&self) -> f64 {
         self.angle_between(&Vector2::of(1.0, 0.0))
     }
@@ -150,10 +149,10 @@ impl LineSegment2 {
         }
     }
 
-    pub(crate) fn algebraic(slope: f64, y_inteArcept: f64) -> LineSegment2 {
+    pub(crate) fn algebraic(slope: f64, y_intercept: f64) -> LineSegment2 {
         LineSegment2 {
-            a: Vector2::of(0.0, y_inteArcept),
-            b: Vector2::of(1.0, y_inteArcept + slope),
+            a: Vector2::of(0.0, y_intercept),
+            b: Vector2::of(1.0, y_intercept + slope),
         }
     }
 
@@ -351,6 +350,8 @@ impl fmt::Display for Vector2 {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
+
     use super::*;
 
     #[test]

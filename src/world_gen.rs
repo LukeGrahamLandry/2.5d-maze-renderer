@@ -42,7 +42,9 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Shelf<Re
 
     let walls = condense_walls(horizontal_walls, vertical_walls);
 
-    let region = Region::new(Material::new(0.5, 0.25, 0.1));
+    let mut floor_material = Material::new(0.5, 0.25, 0.1);
+    floor_material.ambient = 0.05;
+    let region = Region::new(floor_material);
     {
         let mut m_region = region.borrow_mut();
         let count = walls.len();

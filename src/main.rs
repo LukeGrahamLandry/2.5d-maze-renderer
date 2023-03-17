@@ -5,7 +5,8 @@ use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use crate::world_gen::{example_preset, random_maze_world, shift_the_world};
+use world_gen::shift_the_world;
+use crate::world_gen::random_maze_world;
 
 mod world;
 mod player;
@@ -21,7 +22,8 @@ mod camera;
 mod map;
 
 // TODO: calculate dynamically based on target FPS
-const FRAME_DELAY_MS: u64 = 40;
+const FRAME_DELAY_MS: u64 = 0;
+const IDLE_FRAME_DELAY_MS: u64 = 20;
 
 pub fn run() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
@@ -53,8 +55,10 @@ pub fn run() -> Result<(), String> {
     let mut start = Instant::now();
 
     let mut seconds_counter = 0.0;
-    let mut frame_counter = 0;
+    let mut render_frame_counter = 0;
+    let mut idle_frame_counter = 0;
     let mut pause_seconds_counter = 0.0;
+    let mut total_delay_ms = 0u64;
     'mainloop: loop {
         let mut delta_mouse = 0;
         for event in events.poll_iter() {
@@ -93,35 +97,42 @@ pub fn run() -> Result<(), String> {
         let duration = start.elapsed().as_secs_f64();
 
         seconds_counter += duration;
-        frame_counter += 1;
 
         if seconds_counter > 5.0 {
             let ms_counter = seconds_counter * 1000.0;
-            let frame_time = (ms_counter / (frame_counter as f64)).round() as u64;
-            let fps = (frame_counter as f64 / seconds_counter).round();
-            let total_delay_ms = (frame_counter * FRAME_DELAY_MS) as f64;
-            let sleep_percent = (total_delay_ms / ms_counter * 100.0).round();
+            let frame_time = (ms_counter / ((render_frame_counter + idle_frame_counter) as f64)).round() as u64;
+            let fps = ((render_frame_counter + idle_frame_counter) as f64 / seconds_counter).round();
+            // TODO: count render time seperatly so i can only count fps while it was actually rendering
+            let sleep_percent = ((total_delay_ms as f64) / ms_counter * 100.0).round();
             let pause_percent = (pause_seconds_counter / seconds_counter * 100.0).round();
-            println!("{} fps; {} ms per frame (sleeping {}%, idle {}%)", fps, frame_time, sleep_percent, pause_percent);
+            println!("{} seconds; rendered {} frames; idle {} frames; {} fps; {} ms per frame (sleeping {}%, idle {}%)", seconds_counter.round(), render_frame_counter, idle_frame_counter, fps, frame_time, sleep_percent, pause_percent);
             seconds_counter = 0.0;
-            frame_counter = 0;
+            render_frame_counter = 0;
             pause_seconds_counter = 0.0;
+            total_delay_ms = 0;
+            idle_frame_counter = 0;
         }
 
         start = Instant::now();
-
-        let sleep_time = std::time::Duration::from_millis(FRAME_DELAY_MS);
-        thread::sleep(sleep_time);
 
         world.update(duration, &keys, delta_mouse);
 
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
         let needs_render_update = *world.player.borrow().needs_render_update.read().unwrap();
-        if needs_render_update {
+        let sleep_time = if needs_render_update {
             camera::render_scene(&mut canvas, &world, duration);
+            render_frame_counter += 1;
+            FRAME_DELAY_MS
         } else {
             pause_seconds_counter += duration;
-        }
+            idle_frame_counter += 1;
+            IDLE_FRAME_DELAY_MS
+        };
+        
+        if sleep_time > 0 {
+            thread::sleep(std::time::Duration::from_millis(sleep_time));
+            total_delay_ms += sleep_time;
+        }   
     }
 
     Ok(())

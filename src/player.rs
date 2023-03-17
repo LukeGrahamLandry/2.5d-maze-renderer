@@ -1,13 +1,13 @@
 use std::f64::consts::PI;
-use std::fmt::{Debug, Formatter};
-use std::sync::RwLock;
+
+
 use sdl2::keyboard::Keycode;
 
-use crate::material::Material;
+
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::{HitKind, HitResult, VIEW_DIST};
-use crate::shelf::{ShelfPtr};
-use crate::world_data::{Player, Region, Wall, WorldThing};
+
+use crate::world_data::{Player, Wall, WorldThing};
 
 const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
