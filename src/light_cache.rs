@@ -1,29 +1,22 @@
 use std::{collections::HashSet, hash::Hash};
 use std::hash::Hasher;
 
-use crate::{map_builder::{MapLight, MapRegion, MapWall}, mth::{Vector2}, new_world::World, ray::{HitResult, trace_clear_path_between}};
+use crate::{map_builder::{MapLight, MapRegion, MapWall}, mth::{Vector2}, new_world::World, ray::{RaySegment, trace_clear_path_between}};
+use crate::lighting::LightSource;
 use crate::map_builder::Map;
 use crate::material::Colour;
 use crate::ray::{find_shortest_path, trace_clear_portal_light};
 
 
 pub(crate) struct LightCache<'a> {
-    pub(crate) lights: Vec<LightingRegion<'a>>
+    lights: Vec<LightingRegion<'a>>
 }
 
 /// Tracks all the visible lights in a region. Including those that can be seen through portals.
 /// This allows lighting a point in a region without doing an expensive traversal of all portals to find lights.
 pub(crate) struct LightingRegion<'a> {
     pub(crate) region: &'a MapRegion<'a>,
-    pub(crate) portal_lights: Vec<PortalLight<'a>>  // could be a set but i think iterating over vecs is easier
-}
-
-/// A source of light that acts on a single region.
-pub(crate) trait LightSource {
-    fn intensity(&self) -> Colour;
-    fn apparent_pos(&self) -> &Vector2;
-    fn blocked_by_shadow(&self, hit_pos: &Vector2) -> bool;
-    fn region(&self) -> &MapRegion;
+    portal_lights: Vec<PortalLight<'a>>  // could be a set but i think iterating over vecs is easier
 }
 
 /// A light seen through a portal.

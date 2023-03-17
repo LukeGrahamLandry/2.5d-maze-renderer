@@ -5,7 +5,7 @@ use sdl2::render::WindowCanvas;
 use crate::camera::*;
 use crate::material::{Colour};
 use crate::mth::{LineSegment2, Vector2};
-use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_portal_light};
+use crate::ray::{HitKind, RaySegment, ray_trace, single_ray_trace, trace_clear_portal_light};
 use crate::world_data::{ColumnLight, Region, Wall, World};
 
 
@@ -151,7 +151,7 @@ fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: boo
     canvas.draw_between(wall.line.middle(), wall.line.middle().add(&wall.normal.scale(5.0)));
 }
 
-fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &HitResult, hit_colour: Colour, miss_colour: Colour) {
+fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &RaySegment, hit_colour: Colour, miss_colour: Colour) {
     match segment.kind {
         HitKind::HitWall { .. }
         | HitKind::HitPlayer { .. } => {

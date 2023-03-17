@@ -7,7 +7,7 @@ use sdl2::mouse::MouseButton;
 use crate::material::{Colour, Material};
 use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::new_world::World;
-use crate::ray::{HitKind, HitResult, ray_trace, single_ray_trace, trace_clear_path_between};
+use crate::ray::{HitKind, RaySegment, ray_trace, single_ray_trace, trace_clear_path_between};
 use crate::shelf::{Shelf, ShelfPtr};
 
 impl World {

@@ -5,7 +5,7 @@ use sdl2::keyboard::Keycode;
 
 
 use crate::mth::{LineSegment2, Vector2};
-use crate::ray::{HitKind, HitResult, VIEW_DIST};
+use crate::ray::{HitKind, RaySegment, VIEW_DIST};
 
 use crate::world_data::{Player, Wall, WorldThing};
 
@@ -130,8 +130,8 @@ impl Player {
         *self.needs_render_update.write().unwrap() = true;
     }
 
-    pub(crate) fn collide_bounding_box(&self, origin: Vector2, direction: Vector2) -> HitResult {
-        let empty = HitResult::empty(self.region.clone(), origin, direction);
+    pub(crate) fn collide_bounding_box(&self, origin: Vector2, direction: Vector2) -> RaySegment {
+        let empty = RaySegment::empty(self.region.clone(), origin, direction);
         if origin.subtract(&self.pos).length() < (PLAYER_SIZE / 2.0)  {
             return empty;
         }
@@ -157,7 +157,7 @@ impl Player {
                 empty
             }
             Some(hit_side) => {
-                HitResult {
+                RaySegment {
                     region: self.region.clone(),
                     line: LineSegment2::of(origin, closest_hit_point),
                     kind: HitKind::HitPlayer {

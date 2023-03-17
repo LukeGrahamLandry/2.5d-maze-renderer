@@ -2,6 +2,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Index, IndexMut};
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
+use crate::ray::{Portal, SolidWall};
 use crate::world_data::{World};
 
 /// The static arrangement of regions and walls in the world.
@@ -32,6 +33,36 @@ pub(crate) struct MapLight<'a> {
     pub(crate) region: &'a MapRegion<'a>,
     pub(crate) intensity: Colour,
     pub(crate) pos: Vector2
+}
+
+impl<'a> SolidWall for MapWall<'a> {
+    fn portal(&self) -> Option<Portal<'a>> {
+        match self.next_wall {
+            None => { None }
+            Some(next_wall) => {
+                Some(Portal {
+                    from_wall: self,
+                    to_wall: next_wall
+                })
+            }
+        }
+    }
+
+    fn material(&self) -> &Material {
+        &self.material
+    }
+
+    fn line(&self) -> &LineSegment2 {
+        &self.line
+    }
+
+    fn normal(&self) -> &Vector2 {
+        &self.normal
+    }
+
+    fn region(&self) -> &MapRegion<'a> {
+        self.region
+    }
 }
 
 // If you ever resize any of the vectors, all the references are completely fucked.
@@ -112,7 +143,7 @@ impl MapBuilder {
         for (r, region_builder) in self.regions.iter().enumerate() {
             for (w, wall_builder) in region_builder.walls.iter().enumerate() {
                 (*map).regions[r].walls.push(MapWall {
-                    index: wall_builder,
+                    index: w,
                     region: (*map).regions.index(r),
                     line: wall_builder.line,
                     normal: wall_builder.normal,

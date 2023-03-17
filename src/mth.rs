@@ -15,6 +15,9 @@ fn almost_equal(a: f64, b: f64) -> bool {
     (a - b).abs() < EPSILON
 }
 
+pub type Position = Vector2;
+pub type Direction = Vector2;
+
 impl Vector2 {
     pub(crate) const NAN: Vector2 = Vector2::of(f64::NAN, f64::NAN);
 

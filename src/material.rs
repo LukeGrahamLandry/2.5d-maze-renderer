@@ -1,4 +1,4 @@
-use crate::light_cache::{LightSource, LightSource};
+use crate::lighting::LightSource;
 use crate::map_builder::MapRegion;
 use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::ray::{trace_clear_path_between, trace_clear_portal_light};

@@ -6,7 +6,7 @@ use std::sync::RwLock;
 use crate::map_builder::MapRegion;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::ray::HitResult;
+use crate::ray::RaySegment;
 use crate::shelf::{Shelf, ShelfPtr, ShelfRef, ShelfRefMut};
 
 pub(crate) struct World {
@@ -34,7 +34,7 @@ pub(crate) struct Wall {
 }
 
 pub(crate) trait WorldThing {
-    fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult;
+    fn collide(&self, origin: Vector2, direction: Vector2) -> RaySegment;
     fn get_id(&self) -> u64;
     fn get_region(&self) -> ShelfPtr<Region>;
     fn set_region(&mut self, region: ShelfPtr<Region>);
@@ -256,7 +256,7 @@ impl Player {
 }
 
 impl WorldThing for Player {
-    fn collide(&self, origin: Vector2, direction: Vector2) -> HitResult {
+    fn collide(&self, origin: Vector2, direction: Vector2) -> RaySegment {
         self.collide_bounding_box(origin, direction)
     }
 

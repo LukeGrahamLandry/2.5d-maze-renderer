@@ -1,37 +1,78 @@
 use crate::light_cache::PortalLight;
 use crate::map_builder::{MapRegion, MapWall};
-use crate::mth::{EPSILON, LineSegment2, Vector2};
+use crate::material::Material;
+use crate::mth::{Direction, EPSILON, LineSegment2, Position, Vector2};
+
+pub(crate) trait SolidWall {
+    fn portal(&self) -> Option<Portal>;
+    fn material(&self) -> &Material;
+    fn line(&self) -> &LineSegment2;
+    fn normal(&self) -> &Vector2;
+    fn region(&self) -> &MapRegion<'_>;
+}
+
+pub(crate) struct Portal<'a> {
+    pub(crate) from_wall: &'a dyn SolidWall,
+    pub(crate) to_wall: &'a dyn SolidWall
+}
+
+impl<'a> Portal<'a> {
+    pub(crate) fn scale_factor(&self) -> f64 {
+        // Calculate ratio of lengths with only one square root makes me feel very clever.
+        (self.to_wall.line().length_sq() / self.from_wall.line().length_sq()).sqrt()
+    }
+
+    // transform to same position but relative to the new wall, accounting for walls of different sizes.
+    pub(crate) fn translate(&self, pos: Position) -> Position {
+        let last_offset = pos.subtract(&self.from_wall.line().a);
+        let fraction = last_offset.length() / self.from_wall.line().direction().length();
+        let new_offset = self.to_wall.line().direction().negate().scale(fraction);
+
+        self.to_wall.line().a.add(&new_offset)
+    }
+
+    // TODO: should try scaling the direction as well,
+    //       if im not superfluously normalizing it during the ray tracing,
+    //       would change the length of the basis unit vector which might look cool
+    pub(crate) fn rotate(&self, dir: Direction) -> Direction {
+        let rot_offset = self.from_wall.normal().angle_between(&self.to_wall.normal().negate());
+        let dir = dir.rotate(rot_offset);
+        if dir.dot(self.to_wall.normal()) > 0.0 {
+            dir
+        } else {
+            dir.negate()
+        }
+    }
+}
 
 const PORTAL_LIMIT: u16 = 15;
 pub const VIEW_DIST: f64 = 1000.0;
 
 /// Sends a ray through the world, following portals, and returns a separate line segment for each region it passes through.
-pub(crate) fn ray_trace<'a>(mut origin: Vector2, mut direction: Vector2, region: &'a MapRegion<'a>) -> Vec<HitResult<'a>> {
+pub(crate) fn ray_trace<'a>(mut origin: Position, mut direction: Direction, region: &'a MapRegion<'a>) -> Vec<RaySegment<'a>> {
     let mut segments = vec![];
 
     let mut segment = single_ray_trace(origin, direction, region);
     for _ in 0..PORTAL_LIMIT {
-        match &segment.kind.clone() {
-            HitKind::HitNone { .. }
-            | HitKind::HitPlayer { .. } => { break; }
-            HitKind::HitWall { hit_wall, .. } => {
-                match hit_wall.next_wall {
+        match segment.hit_wall {
+            None => { break; }
+            Some(hit_wall) => {
+                match hit_wall.portal() {
                     None => { break; }
-                    Some(new_wall) => {
-                        let t = hit_wall.line.t_of(&segment.line.b).abs();
-                        let hit_back = hit_wall.normal.dot(&direction) > 0.0;
+                    Some(portal) => {
+                        let t = hit_wall.line().t_of(&segment.line.b).abs();
+                        let hit_back = hit_wall.normal().dot(&direction) > 0.0;
                         let hit_edge = t < 0.01 || t > 0.99;
                         if hit_back || hit_edge {
                             break;
                         }
 
                         // Go through the portal
-                        origin = MapWall::translate(segment.line.b, hit_wall, &new_wall);
-                        direction = MapWall::rotate(direction, hit_wall, &new_wall);
+                        origin = portal.translate(segment.line.b);
+                        direction = portal.rotate(direction);
 
                         segments.push(segment.clone());
-                        let region = new_wall.region.clone();
-                        segment = single_ray_trace(origin.add(&direction), direction, region);
+                        segment = single_ray_trace(origin.add(&direction), direction, portal.to_wall.region());
                     }
                 }
             }
@@ -42,7 +83,7 @@ pub(crate) fn ray_trace<'a>(mut origin: Vector2, mut direction: Vector2, region:
     segments
 }
 
-pub(crate) fn trace_clear_path_between<'a>(origin: Vector2, target: Vector2, region: &'a MapRegion<'a>) -> Option<Vec<HitResult<'a>>> {
+pub(crate) fn trace_clear_path_between<'a>(origin: Vector2, target: Vector2, region: &'a MapRegion<'a>) -> Option<Vec<RaySegment<'a>>> {
     let direction = target.subtract(&origin).normalize();
     let segments = ray_trace(origin, direction, region);
     let last_hit = segments.last().unwrap();
@@ -55,7 +96,7 @@ pub(crate) fn trace_clear_path_between<'a>(origin: Vector2, target: Vector2, reg
 }
 
 // This could use trace_clear_path_between and check that the vec is only one long but that would waste time tracing through portals that we don't care about.
-pub(crate) fn trace_clear_path_no_portals_between<'a>(origin: Vector2, target: Vector2, region: &'a MapRegion<'a>) -> Option<HitResult<'a>> {
+pub(crate) fn trace_clear_path_no_portals_between<'a>(origin: Vector2, target: Vector2, region: &'a MapRegion<'a>) -> Option<RaySegment<'a>> {
     let direction = target.subtract(&origin).normalize();
     let last_hit = single_ray_trace(origin, direction, region);
     let has_clear_path = last_hit.line.b.almost_equal(&target);
@@ -94,7 +135,7 @@ pub(crate) fn trace_clear_portal_light(light: &PortalLight, target: Vector2) -> 
 }
 
 /// Sends a ray through a single region until it hits a wall. Without following portals.
-pub(crate) fn single_ray_trace<'a>(origin: Vector2, direction: Vector2, region: &'a MapRegion<'a>) -> HitResult<'a> {
+pub(crate) fn single_ray_trace<'a>(origin: Vector2, direction: Vector2, region: &'a MapRegion<'a>) -> RaySegment<'a> {
     let ray = LineSegment2::from(origin, direction.scale(VIEW_DIST));
 
     let mut shortest_hit_distance_squared = f64::INFINITY;
@@ -114,19 +155,17 @@ pub(crate) fn single_ray_trace<'a>(origin: Vector2, direction: Vector2, region: 
 
     let mut hit_result = match hit_wall {
         None => {
-            HitResult {
+            RaySegment {
                 region,
                 line: LineSegment2::of(origin, origin.add(&direction.scale(VIEW_DIST))),
-                kind: HitKind::HitNone
+                hit_wall: None
             }
         }
         Some(hit_wall) => {
-            HitResult {
+            RaySegment {
                 region,
                 line: LineSegment2::of(origin, closest_hit_point),
-                kind: HitKind::HitWall {
-                    hit_wall
-                }
+                hit_wall: Some(hit_wall)
             }
         }
     };
@@ -140,7 +179,7 @@ const PORTAL_SAMPLE_LENGTH: f64 = 1.0 / 5.0;
 
 /// Find the shortest clear path, without following portals, from a point to a wall.
 /// Returns None if there is no clear path.
-pub(crate) fn find_shortest_path<'a>(region: &'a MapRegion<'a>, pos: Vector2, wall_normal: Vector2, wall: LineSegment2) -> Option<HitResult<'a>> {
+pub(crate) fn find_shortest_path<'a>(region: &'a MapRegion<'a>, pos: Vector2, wall_normal: Vector2, wall: LineSegment2) -> Option<RaySegment<'a>> {
     let sample_count = (wall.length() / PORTAL_SAMPLE_LENGTH).floor();
     let mut shortest_path = None;
     let mut shortest_distance = f64::INFINITY;
@@ -169,32 +208,26 @@ pub(crate) fn find_shortest_path<'a>(region: &'a MapRegion<'a>, pos: Vector2, wa
 
 
 #[derive(Clone)]
-pub struct HitResult<'a> {
+pub struct RaySegment<'a> {
     pub(crate) region: &'a MapRegion<'a>,
     pub(crate) line: LineSegment2,
-    pub(crate) kind: HitKind<'a>
+    pub(crate) hit_wall: Option<&'a dyn SolidWall>
 }
 
-impl<'a> HitResult<'a> {
-    pub(crate) fn empty(region: &'a MapRegion<'a>, origin: Vector2, direction: Vector2) -> HitResult<'a> {
-        HitResult  {
+impl<'a> RaySegment<'a> {
+    pub(crate) fn empty(region: &'a MapRegion<'a>, origin: Vector2, direction: Vector2) -> RaySegment<'a> {
+        RaySegment {
             region,
             line: LineSegment2::of(origin, origin.add(&direction)),
-            kind: HitKind::HitNone
+            hit_wall: None
         }
     }
 
-    fn dist_squared(&self) -> f64 {
-        match self.kind {
-            HitKind::HitNone => { f64::INFINITY }
-            HitKind::HitWall { .. } | HitKind::HitPlayer { .. } => { self.line.length_sq() }
+    fn hit_dist_squared(&self) -> f64 {
+        match self.hit_wall {
+            None => { f64::INFINITY }
+            Some(_) => { self.line.length_sq() }
         }
     }
 }
 
-#[derive(Clone)]
-pub(crate) enum HitKind<'a> {
-    HitNone,
-    HitWall { hit_wall: &'a MapWall<'a> },
-    HitPlayer { box_side: LineSegment2 }
-}

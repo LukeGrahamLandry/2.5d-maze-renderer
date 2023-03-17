@@ -1,11 +1,13 @@
 use crate::camera::*;
 use crate::material::{Colour, Material};
 use crate::mth::Vector2;
-use crate::ray::{ray_trace, HitKind, HitResult};
+use crate::ray::{ray_trace, HitKind, RaySegment};
 use crate::world_data::{Player, Region, World};
 use sdl2::render::WindowCanvas;
 use std::sync::mpsc;
 use std::thread;
+use crate::light_cache::LightingRegion;
+use crate::lighting::{horizontal_surface_colour, vertical_surface_colour};
 
 pub(crate) fn render(world: &World, window: &mut WindowCanvas, _delta_time: f64) {
     let (sender, receiver) = mpsc::channel();
@@ -80,7 +82,7 @@ fn render_column(world: &World, canvas: &mut RenderBuffer, raw_screen_x: usize) 
 
 fn draw_floor_segment(
     canvas: &mut RenderBuffer,
-    segment: &HitResult,
+    segment: &RaySegment,
     screen_x: i32,
     cumulative_dist: f64,
 ) {
@@ -128,7 +130,7 @@ fn draw_floor_segment(
 }
 
 // the sample_count should be high enough that we have one past the end to lerp to
-fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+fn light_floor_segment(segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
@@ -138,40 +140,16 @@ fn light_floor_segment(segment: &HitResult, sample_length: f64, sample_count: i3
                 .normalize()
                 .scale(i as f64 * -sample_length),
         );
-        samples.push(light_floor_point(segment.region.peek(), pos));
+        samples.push(horizontal_surface_colour(segment.region, pos));
     }
 
     samples
 }
 
-fn light_floor_point(region: &Region, hit_pos: Vector2) -> Colour {
-    let mut colour = Colour::black();
-    for light in &region.lights {
-        colour = colour.add(region.floor_material.direct_floor_lighting(
-            region,
-            light.peek(),
-            hit_pos,
-        ));
-    }
-    for wall in region.iter_walls() {
-        for light in wall.lights.iter() {
-            colour = colour.add(region.floor_material.portal_floor_lighting(
-                region,
-                light.location,
-                wall.line,
-                light.parent.peek(),
-                hit_pos,
-            ));
-        }
-    }
-
-    colour
-}
-
 fn draw_wall_3d(
     player: &Player,
     canvas: &mut RenderBuffer,
-    hit: &HitResult,
+    hit: &RaySegment,
     ray_direction: Vector2,
     cumulative_dist: f64,
     screen_x: i32,
@@ -189,14 +167,12 @@ fn draw_wall_3d(
         HitKind::HitPlayer { .. } => player.material,
     };
 
-    let colour = light_wall_column(
-        hit.region.peek(),
+    let colour = vertical_surface_colour(
+        hit.region,
         &hit_point,
         wall_normal,
         &material,
-        player,
         ray_direction,
-        screen_x,
     );
     let (top, bottom) = project_to_screen(cumulative_dist);
 
@@ -205,51 +181,4 @@ fn draw_wall_3d(
         Vector2::of(screen_x as f64, top),
         Vector2::of(screen_x as f64, bottom),
     );
-}
-
-fn light_wall_column(
-    region: &Region,
-    hit_point: &Vector2,
-    wall_normal: Vector2,
-    material: &Material,
-    player: &Player,
-    ray_direction: Vector2,
-    x: i32,
-) -> Colour {
-    let middle = SCREEN_WIDTH as i32 / 2;
-
-    let is_in_middle_half = (x - middle).abs() < (middle / 2);
-    let has_flash_light = player.has_flash_light && is_in_middle_half;
-
-    let mut colour = Colour::black();
-    let to_eye = ray_direction.negate().normalize();
-    for light in &region.lights {
-        colour = colour.add(material.direct_wall_lighting(
-            region,
-            light.peek(),
-            hit_point,
-            wall_normal,
-            &to_eye,
-        ));
-    }
-
-    for wall in region.iter_walls() {
-        for light in wall.lights.iter() {
-            colour = colour.add(material.portal_wall_lighting(
-                region,
-                light.location,
-                wall.line,
-                light.parent.peek(),
-                hit_point,
-                wall_normal,
-                &to_eye,
-            ));
-        }
-    }
-
-    if has_flash_light && x == middle {
-        return colour.multiply(Colour::new(1.0, 0.5, 0.5));
-    }
-
-    colour
 }
