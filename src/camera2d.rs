@@ -94,7 +94,7 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
     canvas.draw_between(world.player.peek().pos, end);
 }
 
-fn draw_portal_light_2d(canvas: &mut RenderBuffer, wall: &Wall, light: &ColumnLight, fake_location: &LineSegment2, region: &Region) {
+fn draw_portal_light_2d(canvas: &mut RenderBuffer, wall: &Wall, light: &ColumnLight, fake_location: &LineSegment2, region: &MapRegion) {
     let light_fake_origin = fake_location.get_b();
     let _light_hits_portal_at = fake_location.get_a();
 

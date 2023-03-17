@@ -3,6 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::iter::Map;
 use std::slice::Iter;
 use std::sync::RwLock;
+use crate::map_builder::MapRegion;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::HitResult;
@@ -62,26 +63,21 @@ pub(crate) struct RelativeLight {
     pub(crate) location: LineSegment2
 }
 
-pub(crate) struct Player {
+pub(crate) struct Player<'a> {
     pub(crate) pos: Vector2,
     pub(crate) look_direction: Vector2,
     pub(crate) move_direction: Vector2,
-    pub(crate) region: ShelfPtr<Region>,
+    pub(crate) region: &'a MapRegion<'a>,
     pub(crate) has_flash_light: bool,
     pub(crate) portals: [Option<ShelfPtr<Wall>>; 2],
     pub(crate) bounding_box: [LineSegment2; 4],
     id: u64,
     pub(crate) material: Material,
     pub(crate) needs_render_update: RwLock<bool>,
-    pub(crate) myself: ShelfPtr<Player>,
     pub(crate) first_person_rendering: bool
 }
 
 impl World {
-    pub(crate) fn add_region(&mut self, region: Shelf<Region>){
-        self.regions.push(region);
-    }
-
     pub(crate) fn new(regions: Vec<Shelf<Region>>, player_region_index: usize, player_x: f64, player_y: f64) -> World {
         let mut player = Player::new(regions[player_region_index].borrow().myself.clone());
         player.pos.x = player_x;

@@ -102,6 +102,10 @@ impl Vector2 {
         self.subtract(&normal.scale(2.0 * self.dot(normal)))
     }
 
+    pub(crate) fn is_pointing_opposite(&self, other: &Vector2) -> bool {
+        self.dot(&other) >= EPSILON
+    }
+
     pub(crate) fn is_nan(&self) -> bool {
         self.x.is_nan() || self.y.is_nan()
     }
@@ -122,7 +126,7 @@ impl Vector2 {
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct LineSegment2 {
     pub(crate) a: Vector2,
     pub(crate) b: Vector2
@@ -345,6 +349,12 @@ pub fn reduce(r1: &mut [f64; 3], r2: &mut [f64; 3]) {
 impl fmt::Display for Vector2 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({}, {})", self.x, self.y)
+    }
+}
+
+impl PartialEq for LineSegment2 {
+    fn eq(&self, other: &Self) -> bool {
+        self.a.almost_equal(&other.a) && self.b.almost_equal(&other.a)
     }
 }
 

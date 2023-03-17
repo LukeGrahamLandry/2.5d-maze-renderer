@@ -1,19 +1,25 @@
+use std::hash::{Hash, Hasher};
 use std::ops::{Index, IndexMut};
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::world_data::{World};
 
+/// The static arrangement of regions and walls in the world.
+/// Once built, it will never mutate which allows reference loops since everything as the same lifetime.
+/// Other representations of world data will synchronise their identities by referencing into this structure.
 pub(crate) struct Map<'a> {
     regions: Vec<MapRegion<'a>>
 }
 
 pub(crate) struct MapRegion<'a> {
+    pub(crate) index: usize,
     walls: Vec<MapWall<'a>>,
     lights: Vec<MapLight<'a>>,
     pub(crate) floor_material: Material
 }
 
 pub(crate) struct MapWall<'a> {
+    pub(crate) index: usize,
     pub(crate) region: &'a MapRegion<'a>,
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
@@ -22,6 +28,7 @@ pub(crate) struct MapWall<'a> {
 }
 
 pub(crate) struct MapLight<'a> {
+    pub(crate) index: usize,
     pub(crate) region: &'a MapRegion<'a>,
     pub(crate) intensity: Colour,
     pub(crate) pos: Vector2
@@ -93,8 +100,9 @@ impl MapBuilder {
     unsafe fn build_into(&self, map: *mut Map) {
         // Its very important that these vectors are sized correctly so they never reallocate and references to their elements remain valid.
         (*map).regions = Vec::with_capacity(self.regions.len());
-        for region_builder in self.regions.iter() {
+        for (r, region_builder) in self.regions.iter().enumerate() {
             (*map).regions.push(MapRegion {
+                index: r,
                 walls: Vec::with_capacity(region_builder.walls.len()),
                 lights: Vec::with_capacity(region_builder.lights.len()),
                 floor_material: region_builder.floor_material
@@ -102,8 +110,9 @@ impl MapBuilder {
         }
 
         for (r, region_builder) in self.regions.iter().enumerate() {
-            for wall_builder in region_builder.walls.iter() {
+            for (w, wall_builder) in region_builder.walls.iter().enumerate() {
                 (*map).regions[r].walls.push(MapWall {
+                    index: wall_builder,
                     region: (*map).regions.index(r),
                     line: wall_builder.line,
                     normal: wall_builder.normal,
@@ -112,8 +121,9 @@ impl MapBuilder {
                 })
             }
 
-            for light_builder in &region_builder.lights {
+            for (l, light_builder) in region_builder.lights.iter().enumerate() {
                 (*map).regions[r].lights.push(MapLight {
+                    index: l,
                     region: (*map).regions.index(r),
                     intensity: light_builder.intensity,
                     pos: light_builder.pos
@@ -253,7 +263,49 @@ mod tests {
         let builder_from_world = MapBuilder::from_world(&world);
         let map = builder_from_world.build();
         let builder_from_map = MapBuilder::from_map(&map);
-        
-        assert!(world.regions[0].borrow().get_wall(0).material == map.regions()[0].walls()[0].material)
+
+        assert_eq!(world.regions[0].borrow().get_wall(0).material, map.regions()[0].walls()[0].material)
     }
 }
+
+// TODO: learn how to write macros
+
+
+impl<'a> Eq for MapRegion<'a> {}
+impl<'a> PartialEq for MapRegion<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl<'a> Eq for MapWall<'a> {}
+impl<'a> PartialEq for MapWall<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.region == other.region && self.index == other.index
+    }
+}
+
+
+impl<'a> Eq for MapLight<'a> {}
+impl<'a> PartialEq for MapLight<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.region == other.region && self.index == other.index
+    }
+}
+
+impl<'a> Hash for MapWall<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.index);
+        state.write_usize(self.region.index);
+    }
+}
+
+impl<'a> Hash for MapLight<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.index);
+        state.write_usize(self.region.index);
+    }
+}
+
+unsafe impl<'a> Sync for Map<'a> {}
+unsafe impl<'a> Send for Map<'a> {}

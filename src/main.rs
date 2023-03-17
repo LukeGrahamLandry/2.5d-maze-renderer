@@ -1,4 +1,5 @@
 extern crate sdl2;
+extern crate core;
 
 use std::thread;
 use std::time::Instant;
@@ -19,7 +20,10 @@ mod world_data;
 mod shelf;
 mod camera2d;
 mod camera;
-mod map;
+mod map_builder;
+mod light_cache;
+mod new_world;
+mod lighting;
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 0;

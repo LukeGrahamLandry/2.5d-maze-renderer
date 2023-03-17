@@ -1,6 +1,6 @@
 [package]
-name = "doomthing"
-description = "doomthing"
+name = "mazerender2d"
+description = "mazerender2d"
 version = "1.0.0"
 authors = ["LukeGrahamLandry"]
 edition = "2021"
