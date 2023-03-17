@@ -17,7 +17,7 @@ pub(crate) struct Region {
     walls: Vec<Shelf<Wall>>,
     pub(crate) myself: ShelfPtr<Region>,
     pub(crate) lights: Vec<Shelf<ColumnLight>>,
-    pub(crate) things: HashMap<u64, Box<ShelfPtr<dyn WorldThing>>>,
+    pub(crate) things: HashMap<u64, ShelfPtr<dyn WorldThing>>,
     pub(crate) floor_material: Material
 }
 
@@ -37,7 +37,7 @@ pub(crate) trait WorldThing {
     fn get_id(&self) -> u64;
     fn get_region(&self) -> ShelfPtr<Region>;
     fn set_region(&mut self, region: ShelfPtr<Region>);
-    fn get_myself(&self) -> Box<ShelfPtr<dyn WorldThing>>;
+    fn get_myself(&self) -> ShelfPtr<dyn WorldThing>;
 }
 
 impl dyn WorldThing {
@@ -99,6 +99,15 @@ impl World {
             player,
             regions
         }
+    }
+
+    pub(crate) fn index_of_region(&self, region: &Region) -> Option<usize> {
+        for (i, check) in self.regions.iter().enumerate() {
+            if check.ptr() == region.myself {
+                return Some(i);
+            }
+        }
+        None
     }
 }
 
@@ -169,12 +178,12 @@ impl Region {
         }
     }
 
-    pub(crate) fn add_thing(&mut self, thing: Box<ShelfPtr<dyn WorldThing>>) {
+    pub(crate) fn add_thing(&mut self, thing: ShelfPtr<dyn WorldThing>) {
         let id = thing.borrow().get_id();
         self.things.insert(id, thing);
     }
 
-    pub(crate) fn remove_thing(&mut self, thing: Box<ShelfPtr<dyn WorldThing>>) {
+    pub(crate) fn remove_thing(&mut self, thing: ShelfPtr<dyn WorldThing>) {
         let id = thing.borrow().get_id();
         self.things.remove(&id);
     }
@@ -191,6 +200,19 @@ impl Region {
 
     pub(crate) fn mut_wall(&self, i: usize) -> ShelfRefMut<Wall> {
         self.walls[i].borrow_mut()
+    }
+
+    pub(crate) fn wall_count(&self) -> usize {
+        self.walls.len()
+    }
+
+    pub(crate) fn index_of_wall(&self, wall: &Wall) -> Option<usize> {
+        for (i, check) in self.walls.iter().enumerate() {
+            if check.ptr() == wall.myself {
+                return Some(i);
+            }
+        }
+        None
     }
 }
 
@@ -254,7 +276,7 @@ impl WorldThing for Player {
         self.region = region;
     }
 
-    fn get_myself(&self) -> Box<ShelfPtr<dyn WorldThing>> {
+    fn get_myself(&self) -> ShelfPtr<dyn WorldThing>{
         self.myself.as_thing()
     }
 }

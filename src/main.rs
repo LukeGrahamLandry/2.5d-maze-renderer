@@ -18,7 +18,7 @@ mod world_data;
 mod shelf;
 mod camera2d;
 mod camera;
-mod test;
+mod map;
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 40;

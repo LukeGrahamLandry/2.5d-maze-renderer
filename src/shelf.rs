@@ -196,10 +196,10 @@ impl<T: ?Sized> ShelfPtr<T> {
         other.raw_ptr() == self.raw_ptr()
     }
 
-    pub(crate) fn as_thing(&self) -> Box<ShelfPtr<dyn WorldThing>> where T: 'static + Sized + WorldThing {
-        Box::new(ShelfPtr {
+    pub(crate) fn as_thing(&self) -> ShelfPtr<dyn WorldThing> where T: 'static + Sized + WorldThing {
+        ShelfPtr {
             cell: self.cell
-        })
+        }
     }
 }
 
