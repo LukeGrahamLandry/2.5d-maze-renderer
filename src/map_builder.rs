@@ -8,35 +8,35 @@ use crate::ray::{Portal, SolidWall};
 /// The static arrangement of regions and walls in the world.
 /// Once built, it will never mutate which allows reference loops since everything as the same lifetime.
 /// Other representations of world data will synchronise their identities by referencing into this structure.
-pub(crate) struct Map<'a> {
-    regions: Vec<MapRegion<'a>>
+pub(crate) struct Map<'map> {
+    regions: Vec<MapRegion<'map>>
 }
 
-pub(crate) struct MapRegion<'a> {
+pub(crate) struct MapRegion<'map> {
     pub(crate) index: usize,
-    walls: Vec<MapWall<'a>>,
-    lights: Vec<MapLight<'a>>,
+    walls: Vec<MapWall<'map>>,
+    lights: Vec<MapLight<'map>>,
     pub(crate) floor_material: Material
 }
 
-pub(crate) struct MapWall<'a> {
+pub(crate) struct MapWall<'map> {
     pub(crate) index: usize,
-    pub(crate) region: &'a MapRegion<'a>,
+    pub(crate) region: &'map MapRegion<'map>,
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
-    pub(crate) next_wall: Option<&'a MapWall<'a>>,
+    pub(crate) next_wall: Option<&'map MapWall<'map>>,
     pub(crate) material: Material,
 }
 
-pub(crate) struct MapLight<'a> {
+pub(crate) struct MapLight<'map> {
     pub(crate) index: usize,
-    pub(crate) region: &'a MapRegion<'a>,
+    pub(crate) region: &'map MapRegion<'map>,
     pub(crate) intensity: Colour,
     pub(crate) pos: Vector2
 }
 
-impl<'a> SolidWall for MapWall<'a> {
-    fn portal(&self) -> Option<Portal<'a>> {
+impl<'map: 'walls, 'walls> SolidWall<'walls> for MapWall<'map> {
+    fn portal(&'walls self) -> Option<Portal<'walls>> {
         match self.next_wall {
             None => { None }
             Some(next_wall) => {
@@ -52,15 +52,15 @@ impl<'a> SolidWall for MapWall<'a> {
         &self.material
     }
 
-    fn line(&self) -> &LineSegment2 {
-        &self.line
+    fn line(&self) -> LineSegment2 {
+        self.line
     }
 
-    fn normal(&self) -> &Vector2 {
-        &self.normal
+    fn normal(&self) -> Vector2 {
+        self.normal
     }
 
-    fn region(&self) -> &MapRegion<'a> {
+    fn region(&self) -> &MapRegion<'map> {
         self.region
     }
 }
@@ -71,18 +71,18 @@ impl<'a> SolidWall for MapWall<'a> {
 // There's some combination of MaybeUninit and raw pointers that would make this work.
 // But just having a getter that only gives immutable references and being careful to be safe in this module works too.
 
-impl<'a> Map<'a> {
-    pub(crate) fn regions(&self) -> &Vec<MapRegion> {
+impl<'map> Map<'map> {
+    pub(crate) fn regions(&'map self) -> &Vec<MapRegion> {
         &self.regions
     }
 }
 
-impl<'a> MapRegion<'a> {
-    pub(crate) fn walls(&self) -> &Vec<MapWall> {
+impl<'map> MapRegion<'map> {
+    pub(crate) fn walls(&'map self) -> &Vec<MapWall<'map>> {
         &self.walls
     }
 
-    pub(crate) fn lights(&self) -> &Vec<MapLight> {
+    pub(crate) fn lights(&'map self) -> &Vec<MapLight<'map>> {
         &self.lights
     }
 }
@@ -184,7 +184,7 @@ impl MapBuilder {
         });
     }
 
-    pub(crate) fn build<'a>(&self) -> Map<'a> {
+    pub(crate) fn build<'map>(&self) -> Map<'map> {
         let mut map = Map {
             regions: Vec::new()
         };
@@ -369,41 +369,41 @@ mod tests {
 // TODO: learn how to write macros
 
 
-impl<'a> Eq for MapRegion<'a> {}
-impl<'a> PartialEq for MapRegion<'a> {
+impl<'map> Eq for MapRegion<'map> {}
+impl<'map> PartialEq for MapRegion<'map> {
     fn eq(&self, other: &Self) -> bool {
         self.index == other.index
     }
 }
 
-impl<'a> Eq for MapWall<'a> {}
-impl<'a> PartialEq for MapWall<'a> {
+impl<'map> Eq for MapWall<'map> {}
+impl<'map> PartialEq for MapWall<'map> {
     fn eq(&self, other: &Self) -> bool {
         self.region == other.region && self.index == other.index
     }
 }
 
 
-impl<'a> Eq for MapLight<'a> {}
-impl<'a> PartialEq for MapLight<'a> {
+impl<'map> Eq for MapLight<'map> {}
+impl<'map> PartialEq for MapLight<'map> {
     fn eq(&self, other: &Self) -> bool {
         self.region == other.region && self.index == other.index
     }
 }
 
-impl<'a> Hash for MapWall<'a> {
+impl<'map> Hash for MapWall<'map> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.index);
         state.write_usize(self.region.index);
     }
 }
 
-impl<'a> Hash for MapLight<'a> {
+impl<'map> Hash for MapLight<'map> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.index);
         state.write_usize(self.region.index);
     }
 }
 
-unsafe impl<'a> Sync for Map<'a> {}
-unsafe impl<'a> Send for Map<'a> {}
+unsafe impl<'map> Sync for Map<'map> {}
+unsafe impl<'map> Send for Map<'map> {}

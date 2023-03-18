@@ -5,41 +5,41 @@ use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::{Portal, SolidWall, trace_clear_path_between};
 
-pub(crate) struct DynamicWall<'a> {
+pub(crate) struct DynamicWall<'map, 'walls> {
     line: LineSegment2,
-    material: &'a Material,
-    region: &'a MapRegion<'a>,
-    portal: Option<Portal<'a>>
+    material: Material,
+    region: &'map MapRegion<'map>,
+    portal: Option<Portal<'walls>>
 }
 
 
-pub(crate) struct DynamicLight<'a> {
-    region: &'a MapRegion<'a>,
+pub(crate) struct DynamicLight<'map> {
+    region: &'map MapRegion<'map>,
     intensity: Colour,
     pos: Vector2
 }
 
 
-pub(crate) struct SquareEntity<'a> {
+pub(crate) struct SquareEntity<'map> {
     pub(crate) id: usize,
     pub(crate) pos: Vector2,
-    pub(crate) region: &'a MapRegion<'a>,
+    pub(crate) region: &'map MapRegion<'map>,
     pub(crate) radius: f64,
     pub(crate) material: Material,
 
 }
 
-impl<'a> SquareEntity<'a> {
+impl<'map, 'walls> SquareEntity<'map> {
     pub(crate) fn get_bounding_box(&self) -> Vec<Box<DynamicWall>> {
         LineSegment2::new_square(self.pos.x - self.radius, self.pos.y - self.radius, self.pos.x + self.radius, self.pos.y + self.radius)
             .into_iter().map(|line| Box::new(DynamicWall {
             line,
-            material: &self.material,
+            material: self.material,
             region: self.region,
             portal: None,
         })).collect()
     }
-    pub(crate) fn update_bounding_box(&mut self, region: &mut LightingRegion<'a>){
+    pub(crate) fn update_bounding_box(&mut self, region: &mut LightingRegion<'map, 'walls>){
         let bounding_box = self.get_bounding_box();
 
         let light = vec![Box::new(DynamicLight {
@@ -54,8 +54,8 @@ impl<'a> SquareEntity<'a> {
 
 
 
-impl<'a> SolidWall for DynamicWall<'a> {
-    fn portal(&self) -> Option<Portal<'a>> {
+impl<'map, 'walls> SolidWall<'walls> for DynamicWall<'map, 'walls> {
+    fn portal(&self) -> Option<Portal<'walls>> {
         self.portal
     }
 
@@ -63,20 +63,20 @@ impl<'a> SolidWall for DynamicWall<'a> {
         &self.material
     }
 
-    fn line(&self) -> &LineSegment2 {
-        &self.line
+    fn line(&self) -> LineSegment2 {
+        self.line
     }
 
-    fn normal(&self) -> &Vector2 {
-        &self.line.normal()
+    fn normal(&self) -> Vector2 {
+        self.line.normal()
     }
 
-    fn region(&self) -> &MapRegion<'a> {
+    fn region(&self) -> &MapRegion<'map> {
         self.region
     }
 }
 
-// impl<'a> LightSource for DynamicLight<'a> {
+// impl<'map> LightSource for DynamicLight<'map> {
 //     fn intensity(&self) -> Colour {
 //         self.intensity
 //     }

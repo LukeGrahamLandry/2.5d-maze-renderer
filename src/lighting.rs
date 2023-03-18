@@ -18,7 +18,7 @@ pub(crate) fn vertical_surface_colour(region: &LightingRegion, hit_point: &Vecto
     let to_eye = ray_direction.negate().normalize();
 
     for light in region {
-        colour = colour.add(wall_lighting(wall.material(), light, hit_point, *wall.normal(), &to_eye));
+        colour = colour.add(wall_lighting(wall.material(), light, hit_point, wall.normal(), &to_eye));
     }
 
     colour

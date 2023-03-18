@@ -14,18 +14,18 @@ const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
 const PLAYER_SIZE: f64 = 4.0;
 
-pub(crate) struct Player<'a> {
-    pub(crate) entity: SquareEntity<'a>,
+pub(crate) struct Player<'map, 'portals> {
+    pub(crate) entity: SquareEntity<'map>,
     pub(crate) look_direction: Vector2,
     pub(crate) move_direction: Vector2,
     pub(crate) has_flash_light: bool,
-    pub(crate) portals: [Option<Box<DynamicWall<'a>>>; 2],
+    pub(crate) portals: [Option<Box<DynamicWall<'map, 'portals>>>; 2],
     pub(crate) needs_render_update: RwLock<bool>,
     pub(crate) first_person_rendering: bool
 }
 
-impl<'a> Player<'a> {
-    pub(crate) fn new(start_region: &'a MapRegion, pos: Vector2) -> Player<'a> {
+impl<'map, 'portals> Player<'map, 'portals> {
+    pub(crate) fn new(start_region: &'map MapRegion, pos: Vector2) -> Player<'map, 'portals> {
         Player {
             entity: SquareEntity {
                 id: 0,
