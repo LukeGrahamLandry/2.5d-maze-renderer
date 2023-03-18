@@ -1,28 +1,47 @@
 use std::{collections::HashSet, hash::Hash};
+use std::collections::HashMap;
 use std::hash::Hasher;
+use std::ops::Index;
 
 use crate::{map_builder::{MapLight, MapRegion, MapWall}, mth::{Vector2}, new_world::World, ray::{RaySegment, trace_clear_path_between}};
 use crate::lighting::LightSource;
 use crate::map_builder::Map;
-use crate::material::Colour;
-use crate::ray::{find_shortest_path, trace_clear_portal_light};
-
+use crate::material::{Colour, Material};
+use crate::mth::LineSegment2;
+use crate::ray::{find_shortest_path, Portal, SolidWall, trace_clear_portal_light};
 
 pub(crate) struct LightCache<'a> {
-    lights: Vec<LightingRegion<'a>>
+    pub(crate) lights: Vec<LightingRegion<'a>>
 }
 
 /// Tracks all the visible lights in a region. Including those that can be seen through portals.
 /// This allows lighting a point in a region without doing an expensive traversal of all portals to find lights.
+/// The goal is that this can mutate because nothing ever references in. You just ask for the iterator when you need it.
 pub(crate) struct LightingRegion<'a> {
     pub(crate) region: &'a MapRegion<'a>,
-    portal_lights: Vec<PortalLight<'a>>  // could be a set but i think iterating over vecs is easier
+    pub(crate) portal_lights: Vec<PortalLight<'a>>,  // could be a set but i think iterating over vecs is easier
+    dynamic_walls: HashMap<usize, Vec<Box<dyn SolidWall + Sync>>>,
+    dynamic_lights: HashMap<usize, Vec<Box<dyn LightSource + Sync>>>
+}
+
+impl<'a> LightingRegion<'a> {
+    pub(crate) fn update_entity(&mut self, id: usize, new_walls: Vec<Box<dyn SolidWall + Sync>>, new_lights: Vec<Box<dyn LightSource + Sync>>) {
+        let old_walls = self.dynamic_walls.get(&id);
+        let old_lights = self.dynamic_lights.get(&id);
+
+        // any lights that hit the old wall
+        // any walls hit by the old light
+
+        self.dynamic_walls.insert(id, new_walls);
+        self.dynamic_lights.insert(id, new_lights);
+    }
 }
 
 /// A light seen through a portal.
 pub(crate) struct PortalLight<'a> {
-    pub(crate) portal_in: &'a MapWall<'a>,  // light goes in this portal
-    pub(crate) portal_out: &'a MapWall<'a>, // and comes out this portal
+    id: usize,
+    pub(crate) portal_in: &'a (dyn SolidWall + Sync),  // light goes in this portal
+    pub(crate) portal_out: &'a (dyn SolidWall + Sync), // and comes out this portal
     /// The original light. There could be other PortalLights in between. It could be in the same region as either or neither portal.
     pub(crate) light: &'a MapLight<'a>,
     /// The position behind the out portal to where the light would be.
@@ -35,6 +54,8 @@ impl<'a> LightCache<'a> {
             LightingRegion {
                 region,
                 portal_lights: Vec::new(),
+                dynamic_walls: Default::default(),
+                dynamic_lights: Default::default(),
             }
         }).collect();
 
@@ -52,7 +73,7 @@ impl<'a> LightCache<'a> {
                 // each light in the correct region when its found instead of collecting them all first.
                 // But I don't think I can mutate the objects while I'm looping over them.
                 // Should be fine here but what about for chaining portals. TODO
-                LightCache::trace_direct_light(light, &mut portal_lights);
+                self.trace_direct_light(light, &mut portal_lights);
             }
         }
 
@@ -64,33 +85,34 @@ impl<'a> LightCache<'a> {
     /// Store an arbitrary set of portal lights on the region of their out_portal.
     fn insert_portal_lights(&mut self, portal_lights: HashSet<PortalLight>) {
         for light in portal_lights {
-            let mut region = &mut self.lights[light.portal_out.region.index];
+            let mut region = &mut self.lights[light.portal_out.region().index];
             region.portal_lights.push(light);
         }
     }
 
     /// Collect all times that a direct light in the region hits a portal.
     /// found_lights will contain PortalLights whose in_portal is in the same region as MapLight.
-    fn trace_direct_light(light: &MapLight, found_lights: &mut HashSet<PortalLight>){
+    fn trace_direct_light(&self, light: &MapLight, found_lights: &mut HashSet<PortalLight>){
         // For every portal, cast a ray from the light to every point on the portal. The first time one hits, we care.
         for wall in light.region.walls() {
             let line = wall.line;
             let normal = wall.normal;
-            match wall.next_wall {
+            match wall.portal() {
                 // If it's not a portal, we ignore it.
                 None => {}
-                Some(next_wall) => {
+                Some(portal) => {
                     let segments = find_shortest_path(light.region, light.pos,normal, line);
                     match segments {
                         // If the light doesn't hit it, we ignore it.
                         None => {}
                         Some(path) => {
-                            let adjusted_origin = MapWall::translate(path.line.b, wall, next_wall);
+                            let adjusted_origin =portal.translate(path.line.b);
                             // let adjusted_direction = MapWall::rotate(path.line.direction(), wall, next_wall).negate();
 
                             found_lights.insert(PortalLight {
+                                id: maze::rand(),
                                 portal_in: wall,
-                                portal_out: next_wall,
+                                portal_out: portal.to_wall,
                                 light,
                                 fake_position: adjusted_origin,
                             });
@@ -99,6 +121,10 @@ impl<'a> LightCache<'a> {
                 }
             }
         }
+    }
+
+    pub(crate) fn get_lighting_region(&self, map_region: &MapRegion) -> &LightingRegion {
+        self.lights.index(map_region.index)
     }
 }
 
@@ -111,12 +137,12 @@ impl<'a> LightSource for PortalLight<'a> {
         &self.fake_position
     }
 
-    fn blocked_by_shadow(&self, hit_pos: &Vector2) -> bool {
-        trace_clear_portal_light(self, *hit_pos).is_none()
+    fn region(&self) -> &MapRegion {
+        self.portal_out.region()
     }
 
-    fn region(&self) -> &MapRegion {
-        self.portal_out.region
+    fn blocked_by_shadow(&self, hit_pos: &Vector2) -> bool {
+        trace_clear_portal_light(self, *hit_pos).is_none()
     }
 }
 
@@ -131,17 +157,13 @@ impl<'a> LightSource for MapLight<'a> {
         &self.pos
     }
 
-    fn blocked_by_shadow(&self, hit_point: &Vector2) -> bool {
-        trace_clear_path_between(self.pos, *hit_point, self.region).is_none()
-    }
-
     fn region(&self) -> &MapRegion {
         self.region
     }
-}
 
-fn cast<T: LightSource>(light: &T) -> &dyn LightSource {
-    light as &dyn LightSource
+    fn blocked_by_shadow(&self, hit_point: &Vector2) -> bool {
+        trace_clear_path_between(self.pos, *hit_point, self.region).is_none()
+    }
 }
 
 struct LightSourceIter<'a> {
@@ -205,20 +227,13 @@ impl<'a> Into<&'a MapRegion<'a>> for &'a LightingRegion<'a>{
 
 impl<'a> Hash for PortalLight<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.portal_in.hash(state);
-        self.portal_out.hash(state);
-        self.light.hash(state);
-        self.fake_position.x.to_bits().hash(state);
-        self.fake_position.y.to_bits().hash(state);
+        self.id.hash(state);
     }
 }
 
 impl<'a> Eq for PortalLight<'a> {}
 impl<'a> PartialEq for PortalLight<'a> {
     fn eq(&self, other: &Self) -> bool {
-        self.portal_in == other.portal_in
-        && self.portal_out == other.portal_out
-        && self.light == other.light
-        && self.fake_position.almost_equal(&other.fake_position)
+        self.id == other.id
     }
 }

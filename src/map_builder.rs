@@ -2,8 +2,8 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Index, IndexMut};
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
+use crate::new_world::World;
 use crate::ray::{Portal, SolidWall};
-use crate::world_data::{World};
 
 /// The static arrangement of regions and walls in the world.
 /// Once built, it will never mutate which allows reference loops since everything as the same lifetime.
@@ -116,6 +116,74 @@ pub(crate) struct LightBuilder {
 }
 
 impl MapBuilder {
+    pub(crate) fn new() -> MapBuilder {
+        MapBuilder {
+            regions: vec![]
+        }
+    }
+
+    pub(crate) fn new_region(&mut self, floor_material: Material) -> usize {
+        let i = self.regions.len();
+        self.regions.push(RegionBuilder {
+            myself_index: i,
+            walls: vec![],
+            lights: vec![],
+            floor_material
+        });
+
+        i
+    }
+
+    pub(crate) fn new_square_region(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, material: Material) -> usize {
+        let region = self.new_region(material);
+
+        let walls = LineSegment2::new_square(x1, y1, x2, y2);
+        let light_pos = walls[0].a.add(&walls[0].direction().scale(-0.25).add(&walls[2].direction().scale(-0.25)));
+        for i in 0..4 {
+            self.new_wall(region, walls[i], if i % 2 == 0 { walls[i].normal() } else { walls[i].normal().negate() }, Material::new(0.2, 0.2, 0.9));
+        }
+        self.new_light(region, Colour::white(), light_pos);
+
+        region
+    }
+
+    pub(crate) fn new_wall(&mut self, region_index: usize, line: LineSegment2, normal: Vector2, material: Material) -> usize {
+        let mut walls = &mut self.regions[region_index].walls;
+        let i = walls.len();
+        walls.push(WallBuilder {
+            region_index,
+            myself_index: i,
+            line,
+            normal,
+            next_region_index: None,
+            material,
+            next_wall_index: None,
+        });
+        i
+    }
+
+    pub(crate) fn unidirectional_portal(&mut self, from_region: usize, from_wall: usize, to_region: usize, to_wall: usize){
+        let mut from_wall = self.regions[from_region].walls.index_mut(from_wall);
+        from_wall.next_region_index = Some(to_region);
+        from_wall.next_wall_index = Some(to_wall);
+    }
+
+    pub(crate) fn bidirectional_portal(&mut self, from_region: usize, from_wall: usize, to_region: usize, to_wall: usize){
+        self.unidirectional_portal(from_region, from_wall, to_region, to_wall);
+        self.unidirectional_portal(to_region, to_wall, from_region, from_wall);
+    }
+
+    pub(crate) fn new_light(&mut self, region_index: usize, intensity: Colour, pos: Vector2){
+        let mut lights = &mut self.regions[region_index].lights;
+
+        lights.push(LightBuilder {
+            myself_index: lights.len(),
+            region_index,
+            intensity,
+            pos
+        });
+    }
+
     pub(crate) fn build<'a>(&self) -> Map<'a> {
         let mut map = Map {
             regions: Vec::new()
@@ -225,62 +293,61 @@ impl MapBuilder {
         map
     }
 
-    pub(crate) fn from_world(builder: &World) -> MapBuilder{
-        let mut map = MapBuilder {
-            regions: vec![],
-        };
-
-        // Its very important that these vectors are sized correctly so they never reallocate and references to their elements remain valid.
-        map.regions = Vec::with_capacity(builder.regions.len());
-        for (r, region_builder) in builder.regions.iter().enumerate() {
-            let region_builder = region_builder.borrow();
-            map.regions.push(RegionBuilder {
-                myself_index: r,
-                walls: Vec::with_capacity(region_builder.wall_count()),
-                lights: Vec::with_capacity(region_builder.lights.len()),
-                floor_material: region_builder.floor_material
-            });
-        }
-
-        for (r, region_builder) in builder.regions.iter().enumerate() {
-            let region_builder = region_builder.borrow();
-            for (w, wall_builder) in region_builder.iter_walls().enumerate() {
-                map.regions[r].walls.push(WallBuilder {
-                    myself_index: w,
-                    region_index: r,
-                    line: wall_builder.line,
-                    normal: wall_builder.normal,
-                    next_region_index: match wall_builder.get_next_wall() {
-                        None => { None }
-                        Some(next_wall) => {
-                            let target_r = builder.index_of_region(&next_wall.borrow().region.borrow()).expect("Failed region connection.");
-                            Some(target_r)
-                        }
-                    },
-                    next_wall_index: match wall_builder.get_next_wall() {
-                        None => { None }
-                        Some(next_wall) => {
-                            let target_r = builder.index_of_region(&next_wall.borrow().region.borrow()).expect("Failed region connection.");
-                            let target_w = builder.regions[target_r].borrow().index_of_wall(&next_wall.borrow()).expect("Failed wall connection.");
-                            Some(target_w)
-                        }
-                    },
-                    material: wall_builder.material,
-                })
-            }
-
-            for (l, light_builder) in region_builder.lights.iter().enumerate() {
-                map.regions[r].lights.push(LightBuilder {
-                    region_index: r,
-                    myself_index: l,
-                    intensity: light_builder.borrow().intensity,
-                    pos: light_builder.borrow().pos
-                })
-            }
-        }
-        
-        map
-    }
+    // pub(crate) fn from_world(builder: &World) -> MapBuilder{
+    //     let mut map = MapBuilder {
+    //         regions: vec![],
+    //     };
+    //
+    //     // Its very important that these vectors are sized correctly so they never reallocate and references to their elements remain valid.
+    //     map.regions = Vec::with_capacity(builder.regions.len());
+    //     for (r, region_builder) in builder.regions.iter().enumerate() {
+    //         map.regions.push(RegionBuilder {
+    //             myself_index: r,
+    //             walls: Vec::with_capacity(region_builder.()),
+    //             lights: Vec::with_capacity(region_builder.lights.len()),
+    //             floor_material: region_builder.floor_material
+    //         });
+    //     }
+    //
+    //     for (r, region_builder) in builder.regions.iter().enumerate() {
+    //         let region_builder = region_builder;
+    //         for (w, wall_builder) in region_builder.iter_walls().enumerate() {
+    //             map.regions[r].walls.push(WallBuilder {
+    //                 myself_index: w,
+    //                 region_index: r,
+    //                 line: wall_builder.line,
+    //                 normal: wall_builder.normal,
+    //                 next_region_index: match wall_builder.get_next_wall() {
+    //                     None => { None }
+    //                     Some(next_wall) => {
+    //                         let target_r = builder.index_of_region(&next_wall.region).expect("Failed region connection.");
+    //                         Some(target_r)
+    //                     }
+    //                 },
+    //                 next_wall_index: match wall_builder.get_next_wall() {
+    //                     None => { None }
+    //                     Some(next_wall) => {
+    //                         let target_r = builder.index_of_region(&next_wall.region).expect("Failed region connection.");
+    //                         let target_w = builder.regions[target_r].index_of_wall(&next_wall).expect("Failed wall connection.");
+    //                         Some(target_w)
+    //                     }
+    //                 },
+    //                 material: wall_builder.material,
+    //             })
+    //         }
+    //
+    //         for (l, light_builder) in region_builder.lights.iter().enumerate() {
+    //             map.regions[r].lights.push(LightBuilder {
+    //                 region_index: r,
+    //                 myself_index: l,
+    //                 intensity: light_builder.intensity,
+    //                 pos: light_builder.pos
+    //             })
+    //         }
+    //     }
+    //
+    //     map
+    // }
 }
 
 #[cfg(test)]
@@ -290,12 +357,12 @@ mod tests {
 
     #[test]
     fn immutable_map_builder() {
-        let world = example_preset();
-        let builder_from_world = MapBuilder::from_world(&world);
-        let map = builder_from_world.build();
-        let builder_from_map = MapBuilder::from_map(&map);
+        // let world = example_preset();
+        // let builder_from_world = MapBuilder::from_world(&world);
+        // let map = builder_from_world.build();
+        // let builder_from_map = MapBuilder::from_map(&map);
 
-        assert_eq!(world.regions[0].borrow().get_wall(0).material, map.regions()[0].walls()[0].material)
+        // assert_eq!(world.regions[0].get_wall(0).material, map.regions()[0].walls()[0].material)
     }
 }
 

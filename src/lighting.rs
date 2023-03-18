@@ -8,8 +8,8 @@ use crate::ray::SolidWall;
 pub(crate) trait LightSource {
     fn intensity(&self) -> Colour;
     fn apparent_pos(&self) -> &Vector2;
-    fn blocked_by_shadow(&self, hit_pos: &Vector2) -> bool;
     fn region(&self) -> &MapRegion;
+    fn blocked_by_shadow(&self, hit_pos: &Vector2) -> bool;
 }
 
 /// Calculates the colour of a column of wall based on all lights in the region.

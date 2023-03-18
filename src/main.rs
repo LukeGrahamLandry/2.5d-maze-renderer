@@ -6,24 +6,21 @@ use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use world_gen::shift_the_world;
 use crate::world_gen::random_maze_world;
 
-mod world;
 mod player;
 mod camera3d;
 mod mth;
 mod world_gen;
 mod ray;
 mod material;
-mod world_data;
-mod shelf;
 mod camera2d;
 mod camera;
 mod map_builder;
 mod light_cache;
 mod new_world;
 mod lighting;
+mod entity;
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 0;
@@ -75,18 +72,22 @@ pub fn run() -> Result<(), String> {
 
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => {
-                    world.player.borrow_mut().first_person_rendering = !world.player.borrow_mut().first_person_rendering;
-                    *world.player.borrow().needs_render_update.write().unwrap() = true;
+                    world.player.first_person_rendering = !world.player.first_person_rendering;
+                    *world.player.needs_render_update.write().unwrap() = true;
                 },
 
                 Event::KeyDown { keycode: Some(Keycode::R), .. }
                 => {
-                    shift_the_world(&mut world);
-                    *world.player.borrow().needs_render_update.write().unwrap() = true;
+                    let player_pos = world.player.entity.pos;
+                    let player_facing = world.player.look_direction;
+                    world = random_maze_world();
+                    *world.player.needs_render_update.write().unwrap() = true;
+                    world.player.entity.pos = player_pos;
+                    world.player.look_direction = player_facing;
                 },
 
                 Event::MouseButtonDown { mouse_btn, .. } => {
-                    world.on_mouse_click(mouse_btn);
+                    // world.on_mouse_click(mouse_btn);
                 },
 
                 Event::MouseMotion { xrel, .. } => {
@@ -122,7 +123,7 @@ pub fn run() -> Result<(), String> {
         world.update(duration, &keys, delta_mouse);
 
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
-        let needs_render_update = *world.player.borrow().needs_render_update.read().unwrap();
+        let needs_render_update = *world.player.needs_render_update.read().unwrap();
         let sleep_time = if needs_render_update {
             camera::render_scene(&mut canvas, &world, duration);
             render_frame_counter += 1;

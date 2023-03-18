@@ -1,11 +1,10 @@
 use crate::material::Colour;
 use crate::mth::{LineSegment2, Vector2};
-use crate::shelf::{lock_shelves, unlock_shelves};
-use crate::world_data::World;
 use crate::{camera2d, camera3d};
 use sdl2::pixels::Color;
 use sdl2::render::WindowCanvas;
 use std::f64::consts::PI;
+use crate::new_world::World;
 
 pub const FOV_DEG: i32 = 45;
 pub const SCREEN_HEIGHT: f64 = 600.0;
@@ -17,15 +16,13 @@ pub(crate) fn render_scene(mut canvas: &mut WindowCanvas, world: &World, delta_t
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    lock_shelves();
-    if world.player.peek().first_person_rendering {
+    if world.player.first_person_rendering {
         camera3d::render(&world, &mut canvas, delta_time);
     } else {
         camera2d::render(&world, &mut canvas, delta_time);
     }
-    unlock_shelves();
 
-    *world.player.borrow().needs_render_update.write().unwrap() = false;
+    *world.player.needs_render_update.write().unwrap() = false;
 
     canvas.present();
 }

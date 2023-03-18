@@ -1,13 +1,14 @@
 use crate::camera::*;
 use crate::material::{Colour, Material};
 use crate::mth::Vector2;
-use crate::ray::{ray_trace, HitKind, RaySegment};
-use crate::world_data::{Player, Region, World};
+use crate::ray::{ray_trace, RaySegment, SolidWall};
 use sdl2::render::WindowCanvas;
 use std::sync::mpsc;
 use std::thread;
-use crate::light_cache::LightingRegion;
+use crate::light_cache::{LightCache, LightingRegion};
 use crate::lighting::{horizontal_surface_colour, vertical_surface_colour};
+use crate::new_world::World;
+use crate::player::Player;
 
 pub(crate) fn render(world: &World, window: &mut WindowCanvas, _delta_time: f64) {
     let (sender, receiver) = mpsc::channel();
@@ -57,22 +58,22 @@ fn render_column(world: &World, canvas: &mut RenderBuffer, raw_screen_x: usize) 
     // This makes lower resolutions have gaps instead of being squished on one side of the screen.
     let x = (raw_screen_x as f64 / RESOLUTION_FACTOR) as i32;
 
-    let look_direction = ray_direction_for_x(x, &world.player.peek().look_direction);
+    let look_direction = ray_direction_for_x(x, &world.player.look_direction);
     let segments = ray_trace(
-        world.player.peek().pos,
+        world.player.entity.pos,
         look_direction,
-        &world.player.peek().region.peek(),
+        world.player.entity.region,
     );
 
     let mut cumulative_dist = 0.0;
     for segment in &segments {
-        draw_floor_segment(canvas, segment, x, cumulative_dist);
+        draw_floor_segment(canvas, &world.lighting, segment, x, cumulative_dist);
         cumulative_dist += segment.line.length();
     }
 
     draw_wall_3d(
-        &world.player.peek(),
         canvas,
+        &world.lighting,
         segments.last().unwrap(),
         look_direction,
         cumulative_dist,
@@ -82,6 +83,7 @@ fn render_column(world: &World, canvas: &mut RenderBuffer, raw_screen_x: usize) 
 
 fn draw_floor_segment(
     canvas: &mut RenderBuffer,
+    light_cache: &LightCache,
     segment: &RaySegment,
     screen_x: i32,
     cumulative_dist: f64,
@@ -92,7 +94,7 @@ fn draw_floor_segment(
     let sample_length = 10.0;
     let sample_count = (length / sample_length).round() as i32 + 1;
 
-    let samples = light_floor_segment(&segment, sample_length, sample_count + 1);
+    let samples = light_floor_segment(light_cache, &segment, sample_length, sample_count + 1);
 
     // The top of the last floor segment is the bottom of this one.
     // The top of the floor segment is the bottom of where we'd draw if it was a wall.
@@ -130,7 +132,7 @@ fn draw_floor_segment(
 }
 
 // the sample_count should be high enough that we have one past the end to lerp to
-fn light_floor_segment(segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+fn light_floor_segment(light_cache: &LightCache, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
@@ -140,45 +142,31 @@ fn light_floor_segment(segment: &RaySegment, sample_length: f64, sample_count: i
                 .normalize()
                 .scale(i as f64 * -sample_length),
         );
-        samples.push(horizontal_surface_colour(segment.region, pos));
+        samples.push(horizontal_surface_colour(light_cache.get_lighting_region(segment.region), pos));
     }
 
     samples
 }
 
 fn draw_wall_3d(
-    player: &Player,
     canvas: &mut RenderBuffer,
+    light_cache: &LightCache,
     hit: &RaySegment,
     ray_direction: Vector2,
     cumulative_dist: f64,
     screen_x: i32,
 ) {
-    let hit_point = hit.line.b;
-    let wall_normal = match &hit.kind {
-        HitKind::HitNone { .. } => ray_direction,
-        HitKind::HitWall { hit_wall, .. } => hit_wall.peek().normal,
-        HitKind::HitPlayer { box_side, .. } => box_side.normal(),
-    };
+    match hit.hit_wall {
+        None => {}
+        Some(wall) => {
+            let colour = vertical_surface_colour(light_cache.get_lighting_region(hit.region), &hit.line.get_b(), wall, ray_direction);
+            let (top, bottom) = project_to_screen(cumulative_dist);
 
-    let material = match &hit.kind {
-        HitKind::HitNone { .. } => Material::new(0.0, 0.0, 0.0),
-        HitKind::HitWall { hit_wall, .. } => hit_wall.peek().material,
-        HitKind::HitPlayer { .. } => player.material,
-    };
-
-    let colour = vertical_surface_colour(
-        hit.region,
-        &hit_point,
-        wall_normal,
-        &material,
-        ray_direction,
-    );
-    let (top, bottom) = project_to_screen(cumulative_dist);
-
-    canvas.set_draw_color(colour);
-    canvas.draw_between(
-        Vector2::of(screen_x as f64, top),
-        Vector2::of(screen_x as f64, bottom),
-    );
+            canvas.set_draw_color(colour);
+            canvas.draw_between(
+                Vector2::of(screen_x as f64, top),
+                Vector2::of(screen_x as f64, bottom),
+            );
+        }
+    }
 }

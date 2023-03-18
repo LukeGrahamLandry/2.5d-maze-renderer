@@ -1,12 +1,48 @@
+use std::ops::Index;
 use maze;
+use maze::Grid;
+use crate::map_builder::MapBuilder;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::shelf::{Shelf, ShelfRefMut};
-use crate::world_data::{Region, Wall, World};
+use crate::new_world::World;
+use crate::player::Player;
 
-const SIZE: i32 = 10;
+const MAZE_SIZE: i32 = 10;
+const CELL_SIZE: i32 = 50;
 
-pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Shelf<Region>> {
+pub(crate) fn random_maze_world<'a>() -> World<'a> {
+    let mut builder = MapBuilder::new();
+    create_maze_region(&mut builder, MAZE_SIZE, CELL_SIZE);
+    let map = builder.build();
+    World::new(map, 0, Vector2::of((CELL_SIZE / 2) as f64, (CELL_SIZE / 2) as f64))
+}
+
+fn create_maze_region(builder: &mut MapBuilder, maze_size: i32, cell_size: i32){
+    let mut floor_material = Material::new(0.5, 0.25, 0.1);
+    floor_material.ambient = 0.05;
+    let region = builder.new_region(floor_material);
+
+    let mut grid = maze::Grid::new(maze_size, maze_size);
+    let walls = gen_maze_lines(&mut grid, cell_size);
+    let count = walls.len();
+    for wall in walls {
+        builder.new_wall(region, wall, wall.normal(), Material::new(0.2, 0.8, 0.2));
+    }
+    println!("Created world for {}x{} maze with {} walls", grid.cols, grid.rows, count);
+
+    let lights = [
+        Vector2::of((cell_size / 2) as f64, ((grid.rows * cell_size) - (cell_size / 2)) as f64),
+        Vector2::of(((grid.cols * cell_size) - (cell_size / 2)) as f64, (cell_size / 2) as f64),
+        Vector2::of(((grid.cols * cell_size) - (cell_size / 2)) as f64, ((grid.rows * cell_size) - (cell_size / 2)) as f64),
+        Vector2::of((cell_size / 2) as f64, (cell_size / 2) as f64),
+    ];
+    for light_pos in lights {
+        builder.new_light(region, Colour::white(), light_pos);
+    }
+}
+
+fn gen_maze_lines(mut grid: &mut Grid, cell_size: i32) -> Vec<LineSegment2>{
+    maze::gen::binary_tree::on(&mut grid);
     println!("{}", grid.to_string());
     let mut vertical_walls: Vec<LineSegment2> = vec![];
     let mut horizontal_walls: Vec<LineSegment2> = vec![];
@@ -40,33 +76,9 @@ pub(crate) fn maze_to_regions(grid: &maze::Grid, cell_size: i32) -> Vec<Shelf<Re
         }
     }
 
-    let walls = condense_walls(horizontal_walls, vertical_walls);
-
-    let mut floor_material = Material::new(0.5, 0.25, 0.1);
-    floor_material.ambient = 0.05;
-    let region = Region::new(floor_material);
-    {
-        let mut m_region = region.borrow_mut();
-        let count = walls.len();
-        for wall in walls {
-            m_region.new_wall(wall, wall.normal(), Material::new(0.2, 0.8, 0.2));
-        }
-        println!("Created world for {}x{} maze with {} walls", grid.cols, grid.rows, count);
-
-        let lights = [
-            Vector2::of((cell_size / 2) as f64, ((grid.rows * cell_size) - (cell_size / 2)) as f64),
-            Vector2::of(((grid.cols * cell_size) - (cell_size / 2)) as f64, (cell_size / 2) as f64),
-            Vector2::of(((grid.cols * cell_size) - (cell_size / 2)) as f64, ((grid.rows * cell_size) - (cell_size / 2)) as f64),
-            Vector2::of((cell_size / 2) as f64, (cell_size / 2) as f64),
-        ];
-        for light_pos in lights {
-            m_region.new_light(Colour::white(), light_pos);
-        }
-        m_region.floor_material.colour = Colour::rgb(100, 100, 150);
-    }
-
-    vec![region]
+    condense_walls(horizontal_walls, vertical_walls)
 }
+
 
 /// Combines any continuous runs of walls into one for faster ray tracing.
 fn condense_walls(horizontal: Vec<LineSegment2>, mut vertical: Vec<LineSegment2>) -> Vec<LineSegment2> {
@@ -140,61 +152,26 @@ fn condense_walls(horizontal: Vec<LineSegment2>, mut vertical: Vec<LineSegment2>
     }
 
     smart_walls
-
 }
 
-pub(crate) fn shift_the_world(world: &mut World){
-    let cell_size = 50;
+pub(crate) fn example_preset<'a>() -> World<'a> {
+    let mut builder = MapBuilder::new();
 
-    let mut grid = maze::Grid::new(SIZE, SIZE);
-    maze::gen::binary_tree::on(&mut grid);
-    let regions = maze_to_regions(&grid, cell_size);
+    let r0 = builder.new_square_region(100.0, 200.0, 300.0, 400.0, Material::default(Colour::rgb(0, 50, 50)));
+    let r1 = builder.new_square_region(500.0, 200.0, 700.0, 400.0, Material::default(Colour::rgb(0, 50, 0)));
+    let r2 = builder.new_square_region(50.0, 50.0, 150.0, 150.0, Material::default(Colour::rgb(150, 0, 50)));
 
-    regions[0].borrow_mut().add_thing(world.player.ptr().as_thing());
-    world.player.borrow_mut().region = regions[0].ptr();
-    world.player.borrow_mut().clear_portal(0);
-    world.player.borrow_mut().clear_portal(1);
+    let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
+    let w1 = builder.new_wall(r0, line, line.normal(), Material::new(0.2, 0.3, 0.8));
+    builder.unidirectional_portal(r0, w1, r2, 1);
 
-    world.regions = regions;
-    Region::recalculate_lighting(world.player.borrow().region.clone());
-}
+    let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
+    let w2 = builder.new_wall(r0, line, line.normal(), Material::new(0.2, 0.3, 0.8));
+    builder.unidirectional_portal(r0, w2, r2, 0);
 
-pub(crate) fn random_maze_world() -> World {
-    let cell_size = 50;
+    builder.bidirectional_portal(r0, 0, r1, 1);
+    builder.bidirectional_portal(r1, 2, r2, 3);
 
-    let mut grid = maze::Grid::new(SIZE, SIZE);
-    maze::gen::binary_tree::on(&mut grid);
-    let regions = maze_to_regions(&grid, cell_size);
-
-    World::new(regions, 0, (cell_size / 2) as f64, (cell_size / 2) as f64)
-}
-
-pub(crate) fn example_preset() -> World {
-    let mut regions = vec![];
-
-
-    regions.push(Region::new_square(100.0, 200.0, 300.0, 400.0));
-    regions.push(Region::new_square(500.0, 200.0, 700.0, 400.0));
-    regions.push(Region::new_square(50.0, 50.0, 150.0, 150.0));
-
-    {
-        let mut regions: Vec<ShelfRefMut<Region>> = regions.iter().map(|r| r.borrow_mut()).collect();
-
-        regions[0].floor_material.colour = Colour::rgb(0, 50, 50);
-        regions[1].floor_material.colour = Colour::rgb(0, 50, 0);
-        regions[2].floor_material.colour = Colour::rgb(150, 0, 50);
-
-        let line = LineSegment2::of(Vector2::of(200.0, 300.0), Vector2::of(200.0, 325.0));
-        let wall = regions[0].new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
-        wall.borrow_mut().unidirectional_portal(&*regions[2].get_wall(1));
-
-        let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-        let wall = regions[0].new_wall(line, line.normal(), Material::new(0.2, 0.3, 0.8));
-        wall.borrow_mut().unidirectional_portal(&*regions[2].get_wall(0));
-
-        Wall::bidirectional_portal(&mut regions[0].mut_wall(0), &mut regions[1].mut_wall(1));
-        Wall::bidirectional_portal(&mut* regions[1].mut_wall(2), &mut* regions[2].mut_wall(3));
-    }
-
-    World::new(regions, 0, 150.0, 250.0)
+    let map = builder.build();
+    World::new(map, 0, Vector2::of(150.0, 250.0))
 }

@@ -2,7 +2,6 @@ use crate::lighting::LightSource;
 use crate::map_builder::MapRegion;
 use crate::mth::{EPSILON, LineSegment2, Vector2};
 use crate::ray::{trace_clear_path_between, trace_clear_portal_light};
-use crate::world_data::{ColumnLight, Region};
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Colour {
@@ -78,6 +77,16 @@ impl Material {
     pub(crate) fn new(r: f64, g: f64, b: f64) -> Material {
         Material {
             colour: Colour::new(r, g, b),
+            ambient: 0.1,
+            diffuse: 0.9,
+            specular: 0.2,
+            shininess: 10.0,
+        }
+    }
+
+    pub(crate) fn default(colour: Colour) -> Material {
+        Material {
+            colour,
             ambient: 0.1,
             diffuse: 0.9,
             specular: 0.2,

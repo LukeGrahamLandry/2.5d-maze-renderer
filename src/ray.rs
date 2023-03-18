@@ -1,4 +1,4 @@
-use crate::light_cache::PortalLight;
+use crate::light_cache::{PortalLight};
 use crate::map_builder::{MapRegion, MapWall};
 use crate::material::Material;
 use crate::mth::{Direction, EPSILON, LineSegment2, Position, Vector2};
@@ -11,9 +11,10 @@ pub(crate) trait SolidWall {
     fn region(&self) -> &MapRegion<'_>;
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Portal<'a> {
-    pub(crate) from_wall: &'a dyn SolidWall,
-    pub(crate) to_wall: &'a dyn SolidWall
+    pub(crate) from_wall: &'a (dyn SolidWall + Sync),
+    pub(crate) to_wall: &'a (dyn SolidWall + Sync)
 }
 
 impl<'a> Portal<'a> {
@@ -116,7 +117,7 @@ pub(crate) fn trace_clear_path_no_portals_between<'a>(origin: Vector2, target: V
 pub(crate) fn trace_clear_portal_light(light: &PortalLight, target: Vector2) -> Option<LineSegment2> {
     let ray = LineSegment2::of(light.fake_position, target);
 
-    let ray_hit_portal_pos = ray.intersection(&light.portal_out.line);
+    let ray_hit_portal_pos = ray.intersection(&light.portal_out.line());
     if ray_hit_portal_pos.is_nan() {  // The light does not pass through the portal to the point.
         return None;
     }
@@ -124,7 +125,7 @@ pub(crate) fn trace_clear_portal_light(light: &PortalLight, target: Vector2) -> 
     let direction = target.subtract(&ray_hit_portal_pos);
 
     let ray = LineSegment2::from(ray_hit_portal_pos.add(&direction.tiny()), direction.scale(1.0 - (5.0 * EPSILON)));
-    for wall in light.portal_out.region.walls() {
+    for wall in light.portal_out.region().walls() {
         let hit = wall.line.intersection(&ray);
         if !hit.is_nan() {
             return None;
