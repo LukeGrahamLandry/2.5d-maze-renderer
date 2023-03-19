@@ -1,13 +1,11 @@
 use std::f64::consts::PI;
 use std::sync::RwLock;
 
-
 use sdl2::keyboard::Keycode;
 use crate::entity::{SquareEntity};
 use crate::material::Material;
 use crate::mth::{LineSegment2, Vector2};
 use crate::world::{Wall, World};
-use crate::world::Portal::PORTAL;
 
 
 const MOVE_SPEED: f64 = 100.0;
@@ -44,25 +42,32 @@ impl Player {
         }
     }
 
-    pub(crate) fn update(&mut self, world: &mut World, pressed: &Vec<Keycode>, delta_time: f64, delta_mouse: i32) -> bool {
-        if self.update_direction(pressed, delta_mouse) {
-            let move_direction = self.handle_collisions(world, self.move_direction);
+    pub(crate) fn update(world: &mut World, pressed: &Vec<Keycode>, delta_time: f64, delta_mouse: i32) -> bool {
+        let moved = {
+            world.player_mut().update_direction(pressed, delta_mouse)
+        };
 
-            self.entity.pos.x += move_direction.x * delta_time * MOVE_SPEED;
-            self.entity.pos.y += move_direction.y * delta_time * MOVE_SPEED;
-            *self.needs_render_update.write().unwrap() = true;
-            true
-        } else {
-            false
+        if moved {
+            let dir = world.player_mut().move_direction;
+            let move_direction= Player::handle_collisions(world, dir);
+
+            let player = world.player_mut();
+            player.entity.pos.x += move_direction.x * delta_time * MOVE_SPEED;
+            player.entity.pos.y += move_direction.y * delta_time * MOVE_SPEED;
+            *player.needs_render_update.write().unwrap() = true;
         }
+
+        moved
     }
 
-    pub(crate) fn handle_collisions(&mut self, world: &mut World, mut move_direction: Vector2) -> Vector2 {
+    pub(crate) fn handle_collisions(world: &mut World, mut move_direction: Vector2) -> Vector2 {
+        let player = &mut world.player;
+        let region = &world.regions[player.entity.region];
         let player_size = 11.0;
-        let ray = LineSegment2::from(self.entity.pos, move_direction.scale(player_size));
+        let ray = LineSegment2::from(player.entity.pos, move_direction.scale(player_size));
 
         let mut wall = None;
-        for check_wall in world.get_region(self.entity.region).walls() {
+        for check_wall in region.walls() {
             let hit_pos = check_wall.line().intersection(&ray);
             if !hit_pos.is_nan() {
                 wall = Some(check_wall.clone());
@@ -84,20 +89,18 @@ impl Player {
                 if hit_back || hit_edge {
                     move_direction = slide_direction;
                 } else {
-                    match &wall.portal {
-                        NONE => {
+                    match &wall.portal() {
+                        None => {
                             move_direction = slide_direction;
                         }
-                        PORTAL { next_region, next_wall } => {
+                        Some(portal) => {
                             // TODO: tell the region that the entity switched
-                            self.entity.region = *next_region;
+                            player.entity.region = portal.to_region;
 
-                            let next_region = world.get_region(*next_region);
-                            let next_wall = next_region.get_wall(*next_wall);
-                            self.entity.pos = Wall::translate(self.entity.pos, wall, next_wall);
-                            self.look_direction = Wall::rotate(self.look_direction, wall, next_wall);
-                            self.move_direction = Wall::rotate(self.move_direction, wall, next_wall);
-                            self.entity.pos = self.entity.pos.add(&move_direction);
+                            player.entity.pos = portal.translate(player.entity.pos);
+                            player.look_direction = portal.rotate(player.look_direction);
+                            player.move_direction = portal.rotate(player.move_direction);
+                            player.entity.pos = player.entity.pos.add(&move_direction);
                         }
                     }
                 }
@@ -105,7 +108,7 @@ impl Player {
         }
 
         if move_direction.length() > 0.1 {
-            self.handle_collisions(world, move_direction)
+            Player::handle_collisions(world, move_direction)
         } else {
             move_direction
         }

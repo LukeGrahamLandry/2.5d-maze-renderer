@@ -7,7 +7,7 @@ use crate::player::Player;
 
 pub(crate) struct World {
     pub(crate) regions: Vec<Region>,
-    player: Player
+    pub(crate) player: Player
 }
 
 pub(crate) struct Region {
@@ -17,9 +17,13 @@ pub(crate) struct Region {
     pub(crate) floor_material: Material
 }
 
-pub(crate) enum Portal {
-    NONE,
-    PORTAL { next_wall: usize, next_region: usize }
+#[derive(Clone, Copy)]
+pub(crate) struct Portal {
+    pub(crate) from_wall: usize,
+    pub(crate) from_region: usize,
+    pub(crate) to_wall: usize,
+    pub(crate) to_region: usize,
+    pub(crate) transform: Transformation
 }
 
 pub(crate) struct Wall {
@@ -28,24 +32,27 @@ pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
     pub(crate) material: Material,
-    pub(crate) portal: Portal
+    pub(crate) portal: Option<Portal>
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct LightSource {
     pub(crate) id: usize,
+    pub(crate) region: usize,
     pub(crate) intensity: Colour,
     pub(crate) pos: Vector2,
     pub(crate) kind: LightKind
 }
 
+#[derive(Clone, Copy)]
 pub(crate) enum LightKind {
     DIRECT(),
     PORTAL { line: LineSegment2 }
 }
 
 impl Wall {
-    pub(crate) fn portal(&self) -> &Portal {
-        &self.portal
+    pub(crate) fn portal(&self) -> Option<&Portal> {
+        self.portal.as_ref()
     }
     pub(crate) fn material(&self) -> &Material {
         &self.material
@@ -68,11 +75,13 @@ impl World {
             player: Player::new(start_region_index, start_pos)
         };
 
+        world.init_lighting();
+
         world
     }
 
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
-        self.player.update(self, &pressed, delta_time, delta_mouse);
+        Player::update(self, &pressed, delta_time, delta_mouse);
     }
 
     pub(crate) fn regions(&self) -> impl Iterator<Item=&Region> {
@@ -105,3 +114,57 @@ impl Region {
         self.lights.values()
     }
 }
+
+#[derive(Clone, Copy)]
+pub(crate) struct Transformation {
+    pub(crate) to_line: LineSegment2,
+    pub(crate) to_normal: Vector2,
+    pub(crate) from_line: LineSegment2,
+    pub(crate) from_normal: Vector2,
+}
+
+impl Portal {
+    pub(crate) fn new(from_wall: &Wall, to_wall: &Wall) -> Option<Portal> {
+        Some(Portal {
+            to_region: to_wall.region,
+            to_wall: to_wall.id,
+            from_region: from_wall.region,
+            from_wall: from_wall.id,
+            transform: Transformation {
+                to_line: to_wall.line,
+                to_normal: to_wall.normal,
+                from_line: from_wall.line,
+                from_normal: from_wall.normal,
+            }
+        })
+    }
+
+    pub(crate) fn scale_factor(&self) -> f64 {
+        // Calculate ratio of lengths with only one square root makes me feel very clever.
+        (self.transform.to_line.length_sq() / self.transform.from_line.length_sq()).sqrt()
+    }
+
+    // transform to same position but relative to the new wall, accounting for walls of different sizes.
+    pub(crate) fn translate(&self, pos: Vector2) -> Vector2 {
+        let last_offset = pos.subtract(&self.transform.from_line.a);
+        let fraction = last_offset.length() / self.transform.from_line.direction().length();
+        let new_offset = self.transform.to_line.direction().negate().scale(fraction);
+
+        self.transform.to_line.a.add(&new_offset)
+    }
+
+    // TODO: should try scaling the direction as well,
+    //       if im not superfluously normalizing it during the ray tracing,
+    //       would change the length of the basis unit vector which might look cool
+    pub(crate) fn rotate(&self, dir: Vector2) -> Vector2 {
+        let rot_offset = self.transform.from_normal.angle_between(&self.transform.to_normal.negate());
+        let dir = dir.rotate(rot_offset);
+        if dir.dot(&self.transform.to_normal) > 0.0 {
+            dir
+        } else {
+            dir.negate()
+        }
+    }
+
+}
+

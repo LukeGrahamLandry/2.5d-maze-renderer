@@ -5,7 +5,7 @@ use sdl2::render::WindowCanvas;
 use crate::camera::*;
 use crate::material::{Colour};
 use crate::mth::{LineSegment2, Vector2};
-use crate::world::{LightKind, LightSource, Portal, Region, Wall, World};
+use crate::world::{LightKind, LightSource, Region, Wall, World};
 use crate::ray::{RaySegment};
 
 
@@ -41,7 +41,7 @@ fn inner_render2d(world: & World , canvas: &mut RenderBuffer, _delta_time: f64){
     // Draw the regions.
     for region in world.regions() {
         // Draw direct lights
-        for light in region.lights.values() {
+        for light in region.lights() {
             match &light.kind {
                 LightKind::DIRECT() => {
                     let hit_colour = light.intensity.scale(0.3);
@@ -129,13 +129,13 @@ fn draw_portal_light_2d(region: &Region, canvas: &mut RenderBuffer, light: &Ligh
 fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: bool) {
     let color = if contains_the_player {
         match wall.portal() {
-            Portal::NONE => { Colour::rgb(0, 255, 255) }
-            Portal::PORTAL { .. } => { Colour::rgb(0, 255, 0) }
+            Some { .. } => { Colour::rgb(0, 255, 255) },
+            None => { Colour::rgb(0, 255, 0) }
         }
     } else {
         match wall.portal() {
-            Portal::NONE => { Colour::rgb(0, 155, 15) }
-            Portal::PORTAL { .. } => { Colour::rgb(0, 0, 255) }
+            None => { Colour::rgb(0, 0, 255) },
+            Some { .. } => { Colour::rgb(0, 155, 15) }
         }
     };
 

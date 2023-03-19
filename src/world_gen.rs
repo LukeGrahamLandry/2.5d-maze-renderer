@@ -11,11 +11,11 @@ const CELL_SIZE: i32 = 50;
 pub(crate) fn random_maze_world() -> World  {
     let mut builder = MapBuilder::new();
     create_maze_region(&mut builder, MAZE_SIZE, CELL_SIZE);
-    World::new(builder.build(), 0, Vector2::of((CELL_SIZE / 2) as f64, (CELL_SIZE / 2) as f64))
+    World::new(builder.build(), 0, Vector2::of(CELL_SIZE as f64 * 1.5, CELL_SIZE as f64 * 1.5))
 }
 
 fn create_maze_region(builder: &mut MapBuilder, maze_size: i32, cell_size: i32){
-    let mut floor_material = Material::new(0.5, 0.25, 0.1);
+    let mut floor_material = Material::default(Colour::rgb(100, 100, 150));
     floor_material.ambient = 0.05;
     let region = builder.new_region(floor_material);
 
@@ -163,7 +163,7 @@ pub(crate) fn example_preset() -> World  {
     builder.unidirectional_portal(r0, w1, r2, 1);
 
     let line = LineSegment2::of(Vector2::of(175.0, 300.0), Vector2::of(175.0, 325.0));
-    let w2 = builder.new_wall(r0, line, line.normal(), Material::new(0.2, 0.3, 0.8));
+    let w2 = builder.new_wall(r0, line, line.normal().negate(), Material::new(0.2, 0.3, 0.8));
     builder.unidirectional_portal(r0, w2, r2, 0);
 
     builder.bidirectional_portal(r0, 0, r1, 1);
@@ -217,16 +217,31 @@ impl MapBuilder {
             line,
             normal,
             material,
-            portal: Portal::NONE,
+            portal: None,
         });
         i
     }
 
     pub(crate) fn unidirectional_portal(&mut self, from_region: usize, from_wall: usize, to_region: usize, to_wall: usize){
-        let mut from_wall = self.regions[from_region].walls.get_mut(&from_wall).expect("Invalid wall index.");
-        from_wall.portal = Portal::PORTAL {
-            next_wall: to_wall,
-            next_region: to_region,
+        let regions = &mut self.regions;
+
+        assert!(from_region < regions.len());
+        assert!(to_region < regions.len());
+
+        if from_region == to_region {
+            assert_ne!(from_wall, to_wall);
+
+            let region = &mut regions[from_region];
+            let portal = Portal::new(region.get_wall(from_wall), region.get_wall(to_wall));
+            region.walls.get_mut(&from_wall).expect("Invalid wall index.").portal = portal;
+        } else {
+            let portal = {
+                let from_region = &regions[from_region];
+                let to_region = &regions[to_region];
+                Portal::new(from_region.get_wall(from_wall), to_region.get_wall(to_wall))
+            };
+
+            regions[from_region].walls.get_mut(&from_wall).expect("Invalid wall index.").portal = portal;
         }
     }
 
@@ -241,6 +256,7 @@ impl MapBuilder {
         let i = lights.len();
         lights.insert(i, LightSource {
             id: i,
+            region: region_index,
             intensity,
             pos,
             kind: LightKind::DIRECT(),

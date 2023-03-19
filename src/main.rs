@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use crate::world_gen::random_maze_world;
+use crate::world_gen::{example_preset, random_maze_world};
 
 mod player;
 mod camera3d;
@@ -45,7 +45,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = random_maze_world();
+    let mut world = example_preset();
 
     canvas.clear();
     canvas.present();
@@ -71,8 +71,8 @@ pub fn run() -> Result<(), String> {
 
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => {
-                    world.player().first_person_rendering = !world.player().first_person_rendering;
-                    *world.player().needs_render_update.write().unwrap() = true;
+                    world.player_mut().first_person_rendering = !world.player().first_person_rendering;
+                    *world.player_mut().needs_render_update.write().unwrap() = true;
                 },
 
                 Event::KeyDown { keycode: Some(Keycode::R), .. }
@@ -80,9 +80,9 @@ pub fn run() -> Result<(), String> {
                     let player_pos = world.player().entity.pos;
                     let player_facing = world.player().look_direction;
                     world = random_maze_world();
-                    *world.player().needs_render_update.write().unwrap() = true;
-                    world.player().entity.pos = player_pos;
-                    world.player().look_direction = player_facing;
+                    *world.player_mut().needs_render_update.write().unwrap() = true;
+                    world.player_mut().entity.pos = player_pos;
+                    world.player_mut().look_direction = player_facing;
                 },
 
                 Event::MouseButtonDown { mouse_btn, .. } => {

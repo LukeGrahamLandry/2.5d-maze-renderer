@@ -50,7 +50,7 @@ pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f6
     });
 }
 
-fn render_column(world: & World , canvas: &mut RenderBuffer, raw_screen_x: usize) {
+fn render_column(world: &World , canvas: &mut RenderBuffer, raw_screen_x: usize) {
     // Adjust to what the x would be if the resolution factor was 1.
     // This makes lower resolutions have gaps instead of being squished on one side of the screen.
     let x = (raw_screen_x as f64 / RESOLUTION_FACTOR) as i32;
@@ -65,27 +65,30 @@ fn render_column(world: & World , canvas: &mut RenderBuffer, raw_screen_x: usize
 
     let mut cumulative_dist = 0.0;
     for segment in &segments {
-        draw_floor_segment(canvas, region, segment, x, cumulative_dist);
+        draw_floor_segment(canvas, world.get_region(segment.region), segment, x, cumulative_dist);
         cumulative_dist += segment.line.length();
     }
 
+    let segment = segments.last().unwrap();
     draw_wall_3d(
         canvas,
-        region,
-        segments.last().unwrap(),
+        world.get_region(segment.region),
+        segment,
         look_direction,
         cumulative_dist,
         x,
     );
 }
 
-fn draw_floor_segment<'map: 'walls, 'walls: 'frame, 'frame>(
+fn draw_floor_segment(
     canvas: &mut RenderBuffer,
     region: &Region,
-    segment: &'frame RaySegment,
+    segment: &RaySegment,
     screen_x: i32,
     cumulative_dist: f64,
 ) {
+    assert_eq!(region.id, segment.region);
+
     let ray_line = segment.line;
 
     let length = ray_line.length();
@@ -131,6 +134,7 @@ fn draw_floor_segment<'map: 'walls, 'walls: 'frame, 'frame>(
 
 // the sample_count should be high enough that we have one past the end to lerp to
 fn light_floor_segment(region: &Region, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+    assert_eq!(region.id, segment.region);
     let ray_line = segment.line;
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
@@ -146,18 +150,12 @@ fn light_floor_segment(region: &Region, segment: &RaySegment, sample_length: f64
     samples
 }
 
-fn draw_wall_3d<'map: 'walls, 'walls: 'frame, 'frame>(
-    canvas: &mut RenderBuffer,
-    region: &Region,
-    hit: &RaySegment,
-    ray_direction: Vector2,
-    cumulative_dist: f64,
-    screen_x: i32,
-) {
+fn draw_wall_3d(canvas: &mut RenderBuffer, region: &Region, hit: &RaySegment, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
+    assert_eq!(region.id, hit.region);
     match hit.hit_wall {
         None => {}
         Some(wall) => {
-            let colour = region.vertical_surface_colour(&hit.line.get_b(), wall, ray_direction);
+            let colour = region.vertical_surface_colour(&hit.line.get_b(), wall, hit.line.direction().negate());
             let (top, bottom) = project_to_screen(cumulative_dist);
 
             canvas.set_draw_color(colour);

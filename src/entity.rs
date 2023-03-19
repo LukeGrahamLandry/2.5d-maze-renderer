@@ -1,6 +1,6 @@
 use crate::material::{Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::world::{Portal, Wall};
+use crate::world::{Wall};
 
 pub(crate) struct SquareEntity {
     pub(crate) id: usize,
@@ -24,7 +24,7 @@ impl SquareEntity {
                 normal: line.normal(),
                 material: self.material,
                 region: self.region,
-                portal: Portal::NONE,
+                portal: None,
             })
         }
 

@@ -1,6 +1,6 @@
+use crate::mth;
 use crate::mth::{Direction, EPSILON, LineSegment2, Position, Vector2};
-use crate::world::{LightKind, LightSource, Portal, Region, Wall, World};
-use crate::world::Portal::PORTAL;
+use crate::world::{LightKind, LightSource, Region, Wall, World};
 
 impl LightSource {
     pub(crate) fn blocked_by_shadow(&self, region: &Region, hit_pos: &Vector2) -> bool {
@@ -16,35 +16,6 @@ impl LightSource {
     }
 }
 
-impl Wall {
-    pub(crate) fn scale_factor(from_wall: &Wall, to_wall: &Wall) -> f64 {
-        // Calculate ratio of lengths with only one square root makes me feel very clever.
-        (to_wall.line().length_sq() / from_wall.line().length_sq()).sqrt()
-    }
-
-    // transform to same position but relative to the new wall, accounting for walls of different sizes.
-    pub(crate) fn translate(pos: Position, from_wall: &Wall, to_wall: &Wall) -> Position {
-        let last_offset = pos.subtract(&from_wall.line().a);
-        let fraction = last_offset.length() / from_wall.line().direction().length();
-        let new_offset = to_wall.line().direction().negate().scale(fraction);
-
-        to_wall.line().a.add(&new_offset)
-    }
-
-    // TODO: should try scaling the direction as well,
-    //       if im not superfluously normalizing it during the ray tracing,
-    //       would change the length of the basis unit vector which might look cool
-    pub(crate) fn rotate(dir: Direction, from_wall: &Wall, to_wall: &Wall) -> Direction {
-        let rot_offset = from_wall.normal().angle_between(&to_wall.normal().negate());
-        let dir = dir.rotate(rot_offset);
-        if dir.dot(&to_wall.normal()) > 0.0 {
-            dir
-        } else {
-            dir.negate()
-        }
-    }
-}
-
 const PORTAL_LIMIT: u16 = 15;
 pub const VIEW_DIST: f64 = 1000.0;
 
@@ -53,16 +24,16 @@ impl World {
     pub(crate) fn ray_trace(&self, start_region: usize, mut origin: Position, mut direction: Direction) -> Vec<RaySegment> {
         let mut segments = vec![];
 
-        let region = &self.regions[start_region];
+        let mut region = &self.regions[start_region];
         let mut segment: RaySegment = region.single_ray_trace(origin, direction);
         for _ in 0..PORTAL_LIMIT {
             match segment.hit_wall {
                 None => { break; }
                 Some(hit_wall) => {
                     let hit_wall = region.get_wall(hit_wall);
-                    match hit_wall.portal {
-                        Portal::NONE => { break; }
-                        PORTAL { next_region, next_wall } => {
+                    match hit_wall.portal() {
+                        None => { break; }
+                        Some(portal)  => {
                             let t = hit_wall.line.t_of(&segment.line.b).abs();
                             let hit_back = hit_wall.normal.dot(&direction) > 0.0;
                             let hit_edge = t < 0.01 || t > 0.99;
@@ -71,13 +42,12 @@ impl World {
                             }
 
                             // Transform through the portal
-                            let next_region = &self.regions[next_region];
-                            let next_wall= next_region.get_wall(next_wall);
-                            origin = Wall::translate(segment.line.b, hit_wall, next_wall);
-                            direction = Wall::rotate(direction, hit_wall, next_wall);
+                            region = &self.regions[portal.to_region];
+                            origin = portal.translate(segment.line.b);
+                            direction = portal.rotate(direction);
 
                             segments.push(segment.clone());
-                            segment = next_region.single_ray_trace(origin.add(&direction), direction);
+                            segment = region.single_ray_trace(origin.add(&direction), direction);
                         }
                     }
                 }
@@ -103,10 +73,12 @@ impl World {
 
 impl Region {
     pub(crate) fn trace_clear_path_no_portals_between(&self, origin: Vector2, target: Vector2) -> Option<RaySegment> {
-        let direction = target.subtract(&origin).normalize();
+        let direction = target.subtract(&origin);
+        let expected_length_sq = direction.length_sq();
+        let direction = direction.normalize();
         let last_hit = self.single_ray_trace(origin, direction);
-        let has_clear_path = last_hit.line.b.almost_equal(&target);
-        if has_clear_path {
+        let found_length_sq = last_hit.line.direction().length_sq();
+        if (found_length_sq - expected_length_sq) > -mth::EPSILON {
             Some(last_hit)
         } else {
             None
@@ -221,6 +193,7 @@ impl RaySegment {
     }
 
     pub(crate) fn hit(region: &Region, wall: &Wall, line: LineSegment2) -> RaySegment {
+        assert_eq!(region.id, wall.region);
         RaySegment {
             region: region.id,
             line,

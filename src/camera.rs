@@ -58,13 +58,13 @@ pub(crate) struct ColouredLine {
     pub(crate) b: Vector2,
 }
 
-pub(crate) struct RenderBuffer {
+pub(crate) struct RenderBuffer<'a> {
     current_colour: Colour,
     pub(crate) offset: Vector2,
-    sender: &'static mut dyn FnMut(ColouredLine),
+    sender: &'a mut dyn FnMut(ColouredLine),
 }
 
-impl RenderBuffer {
+impl<'a> RenderBuffer<'a> {
     pub(crate) fn new(sender: &mut dyn FnMut(ColouredLine)) -> RenderBuffer {
         RenderBuffer {
             sender,

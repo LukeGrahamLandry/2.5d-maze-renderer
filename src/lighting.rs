@@ -20,7 +20,7 @@ impl Region {
     pub(crate) fn horizontal_surface_colour(&self, hit_pos: Vector2) -> Colour {
         let mut colour = Colour::black();
         for light in self.lights() {
-            colour.add(self.floor_lighting(&self.floor_material, light, hit_pos));
+            colour = colour.add(self.floor_lighting(&self.floor_material, light, hit_pos));
         }
         colour
     }
