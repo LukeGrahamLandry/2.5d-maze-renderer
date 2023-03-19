@@ -11,7 +11,7 @@ use crate::new_world::World;
 use crate::ray::{RaySegment, SolidWall};
 
 
-pub(crate) fn render<'map>(world: &'map World, window: &mut WindowCanvas, _delta_time: f64){
+pub(crate) fn render<'map: 'walls, 'walls>(world: &'map World<'map> , window: &mut WindowCanvas, _delta_time: f64){
     let player_offset = world.player().entity.pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
     let (sender, receiver) = mpsc::channel();
 
@@ -37,7 +37,7 @@ pub(crate) fn render<'map>(world: &'map World, window: &mut WindowCanvas, _delta
     });
 }
 
-fn inner_render2d<'map>(world: &'map World, canvas: &mut RenderBuffer, _delta_time: f64){
+fn inner_render2d<'map: 'walls, 'walls>(world: &'map World<'map> , canvas: &mut RenderBuffer, _delta_time: f64){
     let half_player_size = 5;
 
     // Draw the regions.

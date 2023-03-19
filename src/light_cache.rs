@@ -59,14 +59,14 @@ impl<'map: 'old + 'new, 'old, 'new> LightCache<'map, 'old> {
         }
     }
 
-    pub(crate) fn recalculate(map: &'map Map<'map>, old_cache: &'old LightCache<'map, 'old>) -> LightCache<'map, 'new> {
+    pub(crate) fn recalculate(map: &'map Map<'map>, old_cache: LightCache<'map, 'old>) -> LightCache<'map, 'new> {
         let mut new_cache: LightCache<'map, 'new> = LightCache::empty();
 
         for region in &old_cache.lights {
             new_cache.add(region.region);
         }
 
-        let lights = old_cache.collect_lights();
+        let lights: HashSet<PortalLight<'map, 'old>> = old_cache.collect_lights();
         LightCache::insert_portal_lights(map, &mut new_cache, lights);
 
         new_cache

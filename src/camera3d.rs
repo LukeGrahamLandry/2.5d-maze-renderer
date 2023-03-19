@@ -9,7 +9,7 @@ use crate::light_cache::{LightCache, LightingRegion};
 use crate::new_world::World;
 use crate::player::Player;
 
-pub(crate) fn render<'map>(world: &'map World, window: &mut WindowCanvas, _delta_time: f64) {
+pub(crate) fn render<'map: 'walls, 'walls>(world: &'map World<'map> , window: &mut WindowCanvas, _delta_time: f64) {
     let (sender, receiver) = mpsc::channel();
 
     let thread_count = 3 as usize;
@@ -52,7 +52,7 @@ pub(crate) fn render<'map>(world: &'map World, window: &mut WindowCanvas, _delta
     });
 }
 
-fn render_column<'map>(world: &'map World, canvas: &mut RenderBuffer, raw_screen_x: usize) {
+fn render_column<'map: 'walls, 'walls>(world: &'map World<'map> , canvas: &mut RenderBuffer, raw_screen_x: usize) {
     // Adjust to what the x would be if the resolution factor was 1.
     // This makes lower resolutions have gaps instead of being squished on one side of the screen.
     let x = (raw_screen_x as f64 / RESOLUTION_FACTOR) as i32;
@@ -81,10 +81,10 @@ fn render_column<'map>(world: &'map World, canvas: &mut RenderBuffer, raw_screen
     );
 }
 
-fn draw_floor_segment(
+fn draw_floor_segment<'map: 'walls, 'walls: 'frame, 'frame>(
     canvas: &mut RenderBuffer,
-    region: &LightingRegion,
-    segment: &RaySegment,
+    region: &'walls LightingRegion<'map, 'walls>,
+    segment: &'frame RaySegment<'map, 'walls>,
     screen_x: i32,
     cumulative_dist: f64,
 ) {
@@ -132,7 +132,7 @@ fn draw_floor_segment(
 }
 
 // the sample_count should be high enough that we have one past the end to lerp to
-fn light_floor_segment(region: &LightingRegion, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+fn light_floor_segment<'map: 'walls, 'walls>(region: &'walls LightingRegion<'map, 'walls>, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
@@ -148,10 +148,10 @@ fn light_floor_segment(region: &LightingRegion, segment: &RaySegment, sample_len
     samples
 }
 
-fn draw_wall_3d<'map: 'walls, 'walls>(
+fn draw_wall_3d<'map: 'walls, 'walls: 'frame, 'frame>(
     canvas: &mut RenderBuffer,
-    region: &LightingRegion,
-    hit: &RaySegment,
+    region: &'walls LightingRegion<'map, 'walls>,
+    hit: &'frame RaySegment<'map, 'walls>,
     ray_direction: Vector2,
     cumulative_dist: f64,
     screen_x: i32,

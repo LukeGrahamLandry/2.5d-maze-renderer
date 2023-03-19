@@ -10,7 +10,7 @@ use crate::new_world::World;
 use crate::ray::{HitKind, RaySegment, ray_trace, single_ray_trace, trace_clear_path_between};
 use crate::shelf::{Shelf, ShelfPtr};
 
-impl World {
+impl World<'map>  {
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
         self.player.update(&pressed, delta_time, delta_mouse);
     }

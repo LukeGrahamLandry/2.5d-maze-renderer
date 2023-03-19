@@ -14,7 +14,7 @@ pub(crate) trait LightSource<'map, 'walls> {
 
 impl<'map, 'walls> LightingRegion<'map, 'walls> {
     /// Calculates the colour of a column of wall based on all lights in the region.
-    pub(crate) fn vertical_surface_colour(&self, hit_point: &Vector2, wall: &dyn SolidWall, ray_direction: Vector2) -> Colour {
+    pub(crate) fn vertical_surface_colour(&'walls self, hit_point: &Vector2, wall: &'walls dyn SolidWall<'map, 'walls>, ray_direction: Vector2) -> Colour {
         let mut colour = Colour::black();
         let to_eye = ray_direction.negate().normalize();
 
@@ -26,7 +26,7 @@ impl<'map, 'walls> LightingRegion<'map, 'walls> {
     }
 
     /// Calculates the colour of a point on the floor based on all lights in the region.
-    pub(crate) fn horizontal_surface_colour(&self, hit_pos: Vector2) -> Colour {
+    pub(crate) fn horizontal_surface_colour(&'walls self, hit_pos: Vector2) -> Colour {
         let mut colour = Colour::black();
         for light in self {
             colour.add(self.floor_lighting(&self.region.floor_material, light, hit_pos));
@@ -34,7 +34,7 @@ impl<'map, 'walls> LightingRegion<'map, 'walls> {
         colour
     }
 
-    fn wall_lighting(&self, material: &Material, light: &dyn LightSource, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
+    fn wall_lighting(&'walls self, material: &Material, light: &'walls dyn LightSource<'map, 'walls>, hit_point: &Vector2, wall_normal: Vector2, to_eye: &Vector2) -> Colour {
         let dir_to_light = light.apparent_pos().subtract(&hit_point).normalize();
         let light_on_front = dir_to_light.is_pointing_opposite(&wall_normal);
         let eye_on_front = to_eye.is_pointing_opposite(&wall_normal);
@@ -43,7 +43,7 @@ impl<'map, 'walls> LightingRegion<'map, 'walls> {
         material.calculate_wall_lighting(light, hit_point, wall_normal, to_eye, in_shadow)
     }
 
-    fn floor_lighting(&self, material: &Material, light: &dyn LightSource, hit_point: Vector2) -> Colour {
+    fn floor_lighting(&'walls self, material: &Material, light: &'walls dyn LightSource<'map, 'walls>, hit_point: Vector2) -> Colour {
         material.calculate_floor_lighting(light, hit_point, light.blocked_by_shadow(self, &hit_point))
     }
 }

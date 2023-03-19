@@ -9,9 +9,9 @@ use crate::mth::Vector2;
 use crate::player::Player;
 use crate::ray::SolidWall;
 
-pub(crate) struct World {
+pub(crate) struct World<'map> {
     pub(crate) map: Box<Map<'map>>,
-    pub(crate) state: WorldState<'map, 'walls>,
+    pub(crate) state: WorldState<'map, 'map>,
 }
 
 pub(crate) struct WorldState<'map: 'walls, 'walls> {
@@ -31,8 +31,8 @@ pub(crate) struct DynamicRegion<'map, 'walls> {
 }
 
 impl<'map: 'walls, 'walls> WorldState<'map, 'walls> {
-    pub(crate) fn update<'new>(&'walls self, map: &'map Map<'map>) -> WorldState<'map, 'new> {
-        let old_cache: &'walls LightCache<'map, 'walls> = &self.lighting;
+    pub(crate) fn update<'new>(self, map: &'map Map<'map>) -> WorldState<'map, 'new> {
+        let old_cache = self.lighting;
         WorldState {
             lighting: LightCache::recalculate(map, old_cache),
             players: vec![]
@@ -40,8 +40,8 @@ impl<'map: 'walls, 'walls> WorldState<'map, 'walls> {
     }
 }
 
-impl<'map: 'walls, 'walls> World {
-    pub(crate) fn new(map: Map<'map>, start_region_index: usize, start_pos: Vector2) -> World {
+impl<'map: 'walls, 'walls> World<'map> {
+    pub(crate) fn new<'w>(map: Map<'map>, start_region_index: usize, start_pos: Vector2) -> World<'map> {
         let mut world = World {
             map: Box::new(map),
             state: WorldState {
