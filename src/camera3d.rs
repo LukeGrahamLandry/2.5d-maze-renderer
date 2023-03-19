@@ -1,16 +1,15 @@
 use crate::camera::*;
 use crate::material::{Colour, Material};
 use crate::mth::Vector2;
-use crate::ray::{ray_trace, RaySegment, SolidWall};
+use crate::ray::{RaySegment, SolidWall};
 use sdl2::render::WindowCanvas;
 use std::sync::mpsc;
 use std::thread;
 use crate::light_cache::{LightCache, LightingRegion};
-use crate::lighting::{horizontal_surface_colour, vertical_surface_colour};
 use crate::new_world::World;
 use crate::player::Player;
 
-pub(crate) fn render(world: &World, window: &mut WindowCanvas, _delta_time: f64) {
+pub(crate) fn render<'map>(world: &'map World, window: &mut WindowCanvas, _delta_time: f64) {
     let (sender, receiver) = mpsc::channel();
 
     let thread_count = 3 as usize;
@@ -53,27 +52,28 @@ pub(crate) fn render(world: &World, window: &mut WindowCanvas, _delta_time: f64)
     });
 }
 
-fn render_column(world: &World, canvas: &mut RenderBuffer, raw_screen_x: usize) {
+fn render_column<'map>(world: &'map World, canvas: &mut RenderBuffer, raw_screen_x: usize) {
     // Adjust to what the x would be if the resolution factor was 1.
     // This makes lower resolutions have gaps instead of being squished on one side of the screen.
     let x = (raw_screen_x as f64 / RESOLUTION_FACTOR) as i32;
 
-    let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-    let segments = ray_trace(
-        world.player.entity.pos,
+    let look_direction = ray_direction_for_x(x, &world.player().look_direction);
+    let region = world.get_light_cache().get_lighting_region(world.player().entity.region);
+    let segments = world.get_light_cache().ray_trace(
+        region,
+        world.player().entity.pos,
         look_direction,
-        world.player.entity.region,
     );
 
     let mut cumulative_dist = 0.0;
     for segment in &segments {
-        draw_floor_segment(canvas, &world.lighting, segment, x, cumulative_dist);
+        draw_floor_segment(canvas, region, segment, x, cumulative_dist);
         cumulative_dist += segment.line.length();
     }
 
     draw_wall_3d(
         canvas,
-        &world.lighting,
+        region,
         segments.last().unwrap(),
         look_direction,
         cumulative_dist,
@@ -83,7 +83,7 @@ fn render_column(world: &World, canvas: &mut RenderBuffer, raw_screen_x: usize) 
 
 fn draw_floor_segment(
     canvas: &mut RenderBuffer,
-    light_cache: &LightCache,
+    region: &LightingRegion,
     segment: &RaySegment,
     screen_x: i32,
     cumulative_dist: f64,
@@ -94,7 +94,7 @@ fn draw_floor_segment(
     let sample_length = 10.0;
     let sample_count = (length / sample_length).round() as i32 + 1;
 
-    let samples = light_floor_segment(light_cache, &segment, sample_length, sample_count + 1);
+    let samples = light_floor_segment(region, &segment, sample_length, sample_count + 1);
 
     // The top of the last floor segment is the bottom of this one.
     // The top of the floor segment is the bottom of where we'd draw if it was a wall.
@@ -132,7 +132,7 @@ fn draw_floor_segment(
 }
 
 // the sample_count should be high enough that we have one past the end to lerp to
-fn light_floor_segment(light_cache: &LightCache, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+fn light_floor_segment(region: &LightingRegion, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
@@ -142,15 +142,15 @@ fn light_floor_segment(light_cache: &LightCache, segment: &RaySegment, sample_le
                 .normalize()
                 .scale(i as f64 * -sample_length),
         );
-        samples.push(horizontal_surface_colour(light_cache.get_lighting_region(segment.region), pos));
+        samples.push(region.horizontal_surface_colour(pos));
     }
 
     samples
 }
 
-fn draw_wall_3d(
+fn draw_wall_3d<'map: 'walls, 'walls>(
     canvas: &mut RenderBuffer,
-    light_cache: &LightCache,
+    region: &LightingRegion,
     hit: &RaySegment,
     ray_direction: Vector2,
     cumulative_dist: f64,
@@ -159,7 +159,7 @@ fn draw_wall_3d(
     match hit.hit_wall {
         None => {}
         Some(wall) => {
-            let colour = vertical_surface_colour(light_cache.get_lighting_region(hit.region), &hit.line.get_b(), wall, ray_direction);
+            let colour = region.vertical_surface_colour(&hit.line.get_b(), wall, ray_direction);
             let (top, bottom) = project_to_screen(cumulative_dist);
 
             canvas.set_draw_color(colour);

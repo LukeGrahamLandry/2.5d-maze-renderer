@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::ops::Index;
 use sdl2::keyboard::Keycode;
 use crate::{map_builder::Map, light_cache::LightingRegion};
@@ -8,10 +9,13 @@ use crate::mth::Vector2;
 use crate::player::Player;
 use crate::ray::SolidWall;
 
-pub(crate) struct World<'map, 'walls> {
-    pub(crate) map: Map<'map>,
+pub(crate) struct World {
+    pub(crate) map: Box<Map<'map>>,
+    pub(crate) state: WorldState<'map, 'walls>,
+}
+
+pub(crate) struct WorldState<'map: 'walls, 'walls> {
     pub(crate) lighting: LightCache<'map, 'walls>,
-    pub(crate) regions: Vec<DynamicRegion<'map, 'walls>>,
     pub(crate) players: Vec<Player<'map, 'walls>>
 }
 
@@ -26,37 +30,55 @@ pub(crate) struct DynamicRegion<'map, 'walls> {
     pub(crate) lighting: LightingRegion<'map, 'walls>,
 }
 
-impl<'map, 'walls> World<'map, 'walls> {
-    pub(crate) fn new(map: Map<'map>, start_region_index: usize, start_pos: Vector2) -> World<'map, 'walls> {
+impl<'map: 'walls, 'walls> WorldState<'map, 'walls> {
+    pub(crate) fn update<'new>(&'walls self, map: &'map Map<'map>) -> WorldState<'map, 'new> {
+        let old_cache: &'walls LightCache<'map, 'walls> = &self.lighting;
+        WorldState {
+            lighting: LightCache::recalculate(map, old_cache),
+            players: vec![]
+        }
+    }
+}
+
+impl<'map: 'walls, 'walls> World {
+    pub(crate) fn new(map: Map<'map>, start_region_index: usize, start_pos: Vector2) -> World {
         let mut world = World {
-            map,
-            lighting: LightCache::empty(),
-            regions: Vec::new(),
-            players: Vec::new()
+            map: Box::new(map),
+            state: WorldState {
+                lighting: LightCache::empty(),
+                players: Vec::new()
+            }
         };
 
-        for region in map.regions(){
-            world.lighting.add(region);
+        for region in world.map.regions(){
+            world.state.lighting.add(region);
         }
 
-        world.players.push(Player::new(world.map.regions().index(start_region_index), start_pos));
+        world.state.players.push(Player::new(world.map.as_ref().regions().index(start_region_index), start_pos));
 
-        world = world.update_lighting();
+        let new_state = {
+            world.state.update(&world.map)
+        };
+
+        world.state = new_state;
 
         world
     }
 
-    pub(crate) fn update_lighting<'new>(mut self) -> World<'map, 'new> {
-        self.lighting = self.lighting.recalculate();
-        self
-    }
-
     pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
-        self.players[0].update(&pressed, delta_time, delta_mouse);
+        self.state.players[0].update(&pressed, delta_time, delta_mouse);
     }
 
-    pub(crate) fn get_lighting_region(&self, map_region: &MapRegion) -> &'walls LightingRegion {
-        self.lighting.lights.index(map_region.index)
+    pub(crate) fn get_lighting_region(&'map self, map_region: &'map MapRegion<'map>) -> &'walls LightingRegion {
+        self.state.lighting.lights.index(map_region.index)
+    }
+
+    pub(crate) fn get_light_cache(&'map self) -> &'walls LightCache {
+        &self.state.lighting
+    }
+
+    pub(crate) fn player(&'map self) -> &'walls Player {
+        self.state.players.index(0)
     }
 }
 

@@ -3,13 +3,13 @@ use crate::lighting::LightSource;
 use crate::map_builder::MapRegion;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::ray::{Portal, SolidWall, trace_clear_path_between};
+use crate::ray::{Portal, SolidWall};
 
 pub(crate) struct DynamicWall<'map, 'walls> {
     line: LineSegment2,
     material: Material,
     region: &'map MapRegion<'map>,
-    portal: Option<Portal<'walls>>
+    portal: Option<Portal<'map, 'walls>>
 }
 
 
@@ -54,8 +54,8 @@ impl<'map, 'walls> SquareEntity<'map> {
 
 
 
-impl<'map, 'walls> SolidWall<'walls> for DynamicWall<'map, 'walls> {
-    fn portal(&self) -> Option<Portal<'walls>> {
+impl<'map, 'walls> SolidWall<'map, 'walls> for DynamicWall<'map, 'walls> {
+    fn portal(&self) -> Option<Portal<'map, 'walls>> {
         self.portal
     }
 
@@ -71,7 +71,7 @@ impl<'map, 'walls> SolidWall<'walls> for DynamicWall<'map, 'walls> {
         self.line.normal()
     }
 
-    fn region(&self) -> &MapRegion<'map> {
+    fn region(&self) -> &'map MapRegion<'map> {
         self.region
     }
 }

@@ -12,17 +12,17 @@ pub const SCREEN_WIDTH: u32 = 800;
 pub const RESOLUTION_FACTOR: f64 = 1.0;
 pub const LIGHT_RAY_COUNT_2D: i32 = 32;
 
-pub(crate) fn render_scene(mut canvas: &mut WindowCanvas, world: &World, delta_time: f64) {
+pub(crate) fn render_scene<'map>(mut canvas: &mut WindowCanvas, world: &'map World, delta_time: f64) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    if world.player.first_person_rendering {
+    if world.player().first_person_rendering {
         camera3d::render(&world, &mut canvas, delta_time);
     } else {
         camera2d::render(&world, &mut canvas, delta_time);
     }
 
-    *world.player.needs_render_update.write().unwrap() = false;
+    *world.player().needs_render_update.write().unwrap() = false;
 
     canvas.present();
 }

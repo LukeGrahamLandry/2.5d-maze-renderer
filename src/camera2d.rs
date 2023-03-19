@@ -3,16 +3,16 @@ use std::sync::{mpsc};
 use std::{thread};
 use sdl2::render::WindowCanvas;
 use crate::camera::*;
-use crate::light_cache::PortalLight;
+use crate::light_cache::{LightingRegion, PortalLight};
 use crate::lighting::LightSource;
 use crate::material::{Colour};
 use crate::mth::{LineSegment2, Vector2};
 use crate::new_world::World;
-use crate::ray::{RaySegment, ray_trace, single_ray_trace, trace_clear_portal_light, SolidWall};
+use crate::ray::{RaySegment, SolidWall};
 
 
-pub(crate) fn render(world: &World, window: &mut WindowCanvas, _delta_time: f64){
-    let player_offset = world.player.entity.pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
+pub(crate) fn render<'map>(world: &'map World, window: &mut WindowCanvas, _delta_time: f64){
+    let player_offset = world.player().entity.pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
     let (sender, receiver) = mpsc::channel();
 
     thread::scope(|s| {
@@ -37,11 +37,11 @@ pub(crate) fn render(world: &World, window: &mut WindowCanvas, _delta_time: f64)
     });
 }
 
-fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
+fn inner_render2d<'map>(world: &'map World, canvas: &mut RenderBuffer, _delta_time: f64){
     let half_player_size = 5;
 
     // Draw the regions.
-    for region in &world.lighting.lights {
+    for region in &world.get_light_cache().lights {
         // Draw direct lights
         for light in region.region.lights() {
             let hit_colour = light.intensity().scale(0.3);
@@ -50,7 +50,7 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
                 // Draw rays
                 let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
                 let ray_start = light.apparent_pos().add(&direction.scale(3.0));
-                let segment = single_ray_trace(ray_start, direction, region.region);
+                let segment = region.single_ray_trace(ray_start, direction);
 
                 draw_ray_segment_2d(canvas, &segment, hit_colour, miss_colour);
             }
@@ -58,12 +58,12 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
 
         // Draw portal lights
         for light in &region.portal_lights {
-            draw_portal_light_2d(canvas, light);
+            draw_portal_light_2d(region, canvas, light);
         }
 
         // Draw walls
         for wall in region.region.walls() {
-            let contains_player = world.player.entity.region == wall.region;
+            let contains_player = world.player().entity.region == wall.region;
             draw_wall_2d(canvas, wall, contains_player);
         }
     }
@@ -74,8 +74,9 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
             continue;
         }
 
-        let look_direction = ray_direction_for_x(x, &world.player.look_direction);
-        let segments = ray_trace(world.player.entity.pos, look_direction, &world.player.entity.region);
+        let look_direction = ray_direction_for_x(x, &world.player().look_direction);
+        let region = world.get_light_cache().get_lighting_region(world.player().entity.region);
+        let segments = world.get_light_cache().ray_trace(region, world.player().entity.pos, look_direction);
         let hit_colour = Colour::rgb(150, 150, 0);
         let miss_colour = Colour::rgb(150, 150, 150);
         for segment in &segments {
@@ -85,17 +86,17 @@ fn inner_render2d(world: &World, canvas: &mut RenderBuffer, _delta_time: f64){
 
     // Draw the player.
     canvas.set_draw_color(Colour::rgb(255, 255, 255));
-    for side in &world.player.entity.get_bounding_box() {
+    for side in &world.player().entity.get_bounding_box() {
         canvas.draw_between(side.line().a, side.line().b);
     }
 
     // Draw look direction.
     canvas.set_draw_color(Colour::rgb(255, 0, 0));
-    let end = world.player.entity.pos.add(&world.player.look_direction.scale(half_player_size as f64));
-    canvas.draw_between(world.player.entity.pos, end);
+    let end = world.player().entity.pos.add(&world.player().look_direction.scale(half_player_size as f64));
+    canvas.draw_between(world.player().entity.pos, end);
 }
 
-fn draw_portal_light_2d(canvas: &mut RenderBuffer, light: &PortalLight) {
+fn draw_portal_light_2d<'map: 'walls, 'walls>(region: &'walls LightingRegion<'map, 'walls>, canvas: &mut RenderBuffer, light: &'walls PortalLight<'map, 'walls>) {
     let wall = light.portal_out;
     canvas.set_draw_color(light.intensity().scale(0.2));
     for r in 0..LIGHT_RAY_COUNT_2D {
@@ -109,10 +110,8 @@ fn draw_portal_light_2d(canvas: &mut RenderBuffer, light: &PortalLight) {
         }
 
         let direction = point_on_portal.subtract(light.apparent_pos());
-        let segments = ray_trace(point_on_portal.add(&direction.tiny()), direction, wall.region());
-        let wall_hit_point = segments.last().unwrap().line.b;
-
-        let line = trace_clear_portal_light(light, wall_hit_point);
+        let segment = region.single_ray_trace(point_on_portal.add(&direction.tiny()), direction);
+        let line = region.trace_clear_portal_light(light, segment.line.get_b());
         match line {
             None => {}
             Some(line) => {
@@ -127,7 +126,7 @@ fn draw_portal_light_2d(canvas: &mut RenderBuffer, light: &PortalLight) {
 
 
 
-fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &dyn SolidWall, contains_the_player: bool) {
+fn draw_wall_2d<'map, 'walls>(canvas: &mut RenderBuffer, wall: &'walls dyn SolidWall<'map, 'walls>, contains_the_player: bool) {
     let color = if contains_the_player {
         if wall.portal().is_some() {
             Colour::rgb(0, 255, 255)

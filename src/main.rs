@@ -72,18 +72,18 @@ pub fn run() -> Result<(), String> {
 
                 Event::KeyDown { keycode: Some(Keycode::Space), .. }
                 => {
-                    world.player.first_person_rendering = !world.player.first_person_rendering;
-                    *world.player.needs_render_update.write().unwrap() = true;
+                    world.player().first_person_rendering = !world.player().first_person_rendering;
+                    *world.player().needs_render_update.write().unwrap() = true;
                 },
 
                 Event::KeyDown { keycode: Some(Keycode::R), .. }
                 => {
-                    let player_pos = world.player.entity.pos;
-                    let player_facing = world.player.look_direction;
+                    let player_pos = world.player().entity.pos;
+                    let player_facing = world.player().look_direction;
                     world = random_maze_world();
-                    *world.player.needs_render_update.write().unwrap() = true;
-                    world.player.entity.pos = player_pos;
-                    world.player.look_direction = player_facing;
+                    *world.player().needs_render_update.write().unwrap() = true;
+                    world.player().entity.pos = player_pos;
+                    world.player().look_direction = player_facing;
                 },
 
                 Event::MouseButtonDown { mouse_btn, .. } => {
@@ -123,7 +123,7 @@ pub fn run() -> Result<(), String> {
         world.update(duration, &keys, delta_mouse);
 
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
-        let needs_render_update = *world.player.needs_render_update.read().unwrap();
+        let needs_render_update = *world.player().needs_render_update.read().unwrap();
         let sleep_time = if needs_render_update {
             camera::render_scene(&mut canvas, &world, duration);
             render_frame_counter += 1;

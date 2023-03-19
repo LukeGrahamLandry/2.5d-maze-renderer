@@ -35,8 +35,8 @@ pub(crate) struct MapLight<'map> {
     pub(crate) pos: Vector2
 }
 
-impl<'map: 'walls, 'walls> SolidWall<'walls> for MapWall<'map> {
-    fn portal(&'walls self) -> Option<Portal<'walls>> {
+impl<'map: 'walls, 'walls> SolidWall<'map, 'walls> for MapWall<'map> {
+    fn portal(&'walls self) -> Option<Portal<'map, 'walls>> {
         match self.next_wall {
             None => { None }
             Some(next_wall) => {
@@ -60,7 +60,7 @@ impl<'map: 'walls, 'walls> SolidWall<'walls> for MapWall<'map> {
         self.normal
     }
 
-    fn region(&self) -> &MapRegion<'map> {
+    fn region(&self) -> &'map MapRegion<'map> {
         self.region
     }
 }
@@ -241,7 +241,7 @@ impl MapBuilder {
             }
         }
     }
-    
+
     pub(crate) fn from_map(builder: &Map) -> MapBuilder {
         let mut map = MapBuilder {
             regions: vec![],
@@ -289,7 +289,7 @@ impl MapBuilder {
                 })
             }
         }
-        
+
         map
     }
 

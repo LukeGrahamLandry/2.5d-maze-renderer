@@ -10,7 +10,7 @@ use crate::player::Player;
 const MAZE_SIZE: i32 = 10;
 const CELL_SIZE: i32 = 50;
 
-pub(crate) fn random_maze_world<'map, 'walls>() -> World<'map, 'walls> {
+pub(crate) fn random_maze_world() -> World {
     let mut builder = MapBuilder::new();
     create_maze_region(&mut builder, MAZE_SIZE, CELL_SIZE);
     let map = builder.build();
@@ -154,7 +154,7 @@ fn condense_walls(horizontal: Vec<LineSegment2>, mut vertical: Vec<LineSegment2>
     smart_walls
 }
 
-pub(crate) fn example_preset<'map, 'walls>() -> World<'map, 'walls> {
+pub(crate) fn example_preset<'map>() -> World {
     let mut builder = MapBuilder::new();
 
     let r0 = builder.new_square_region(100.0, 200.0, 300.0, 400.0, Material::default(Colour::rgb(0, 50, 50)));
