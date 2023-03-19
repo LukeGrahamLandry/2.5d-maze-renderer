@@ -1,79 +1,28 @@
 use std::{collections::HashSet, hash::Hash};
-use std::collections::HashMap;
 use std::hash::Hasher;
 use std::ops::Index;
 
-use crate::{map_builder::{MapLight, MapRegion, MapWall}, mth::{Vector2}, new_world::World, ray::{RaySegment}};
-use crate::lighting::LightSource;
-use crate::map_builder::Map;
-use crate::material::{Colour, Material};
-use crate::mth::LineSegment2;
-use crate::ray::{Portal, SolidWall};
+use crate::{mth::{Vector2}, world::World};
+use crate::material::{Colour};
+use crate::world::{LightSource, Region, Wall};
 
-pub(crate) struct LightCache<'map: 'walls, 'walls> {
-    pub(crate) lights: Vec<LightingRegion<'map, 'walls>>
-}
 
-/// Tracks all the visible lights in a region. Including those that can be seen through portals.
-/// This allows lighting a point in a region without doing an expensive traversal of all portals to find lights.
-/// The goal is that this can mutate because nothing ever references in. You just ask for the iterator when you need it.
-pub(crate) struct LightingRegion<'map: 'walls, 'walls> {
-    pub(crate) region: &'map MapRegion<'map>,
-    pub(crate) portal_lights: Vec<PortalLight<'map, 'walls>>,  // could be a set but i think iterating over vecs is easier
-    dynamic_walls: HashMap<usize, Vec<Box<dyn SolidWall<'map, 'walls> + Sync>>>,
-    dynamic_lights: HashMap<usize, Vec<Box<(dyn LightSource<'map, 'walls> + Sync)>>>
-}
-
-impl<'map: 'walls, 'walls> LightingRegion<'map, 'walls> {
-    // pub(crate) fn update_entity(&'walls mut self, id: usize, new_walls: Vec<Box<dyn SolidWall + Sync + 'walls>>, new_lights: Vec<Box<dyn LightSource + Sync + 'walls>>) {
-    //     let old_walls = self.dynamic_walls.get(&id);
-    //     let old_lights = self.dynamic_lights.get(&id);
-    //
-    //     // any lights that hit the old wall
-    //     // any walls hit by the old light
-    //
-    //     // self.dynamic_walls.insert(id, new_walls);
-    //     // self.dynamic_lights.insert(id, new_lights);
-    // }
-
-    pub(crate) fn walls(&'map self) -> &'map Vec<MapWall<'map>> {
-        &self.region.walls()
-    }
-}
-
-/// A light seen through a portal.
-pub(crate) struct PortalLight<'map, 'walls> {
-    id: usize,
-    pub(crate) portal_in: &'walls (dyn SolidWall<'map, 'walls> + Sync),  // light goes in this portal
-    pub(crate) portal_out: &'walls (dyn SolidWall<'map, 'walls> + Sync), // and comes out this portal
-    /// The original light. There could be other PortalLights in between. It could be in the same region as either or neither portal.
-    pub(crate) light: &'map MapLight<'map>,
-    /// The position behind the out portal to where the light would be.
-    pub(crate) fake_position: Vector2
-}
-
-impl<'map: 'old + 'new, 'old, 'new> LightCache<'map, 'old> {
-    pub(crate) fn empty() -> LightCache<'map, 'new> {
-        LightCache {
-            lights: Vec::new()
-        }
-    }
-
-    pub(crate) fn recalculate(map: &'map Map<'map>, old_cache: LightCache<'map, 'old>) -> LightCache<'map, 'new> {
-        let mut new_cache: LightCache<'map, 'new> = LightCache::empty();
+impl World {
+    pub(crate) fn recalculate(&mut self) {
+        let mut new_cache: LightCache = LightCache::empty();
 
         for region in &old_cache.lights {
             new_cache.add(region.region);
         }
 
-        let lights: HashSet<PortalLight<'map, 'old>> = old_cache.collect_lights();
+        let lights: HashSet<PortalLight> = old_cache.collect_lights();
         LightCache::insert_portal_lights(map, &mut new_cache, lights);
 
         new_cache
     }
 
 
-    pub(crate) fn add(&mut self, region: &'map MapRegion<'map>) {
+    pub(crate) fn add(&mut self, region: & MapRegion) {
         self.lights.push(LightingRegion {
             region,
             portal_lights: Vec::new(),
@@ -82,7 +31,7 @@ impl<'map: 'old + 'new, 'old, 'new> LightCache<'map, 'old> {
         })
     }
 
-    pub(crate) fn collect_lights(&'old self) -> HashSet<PortalLight<'map, 'old>> {
+    pub(crate) fn collect_lights(& self) -> HashSet<PortalLight> {
         let mut portal_lights = HashSet::new();
         for region in &self.lights {
             for light in region.region.lights() {
@@ -100,9 +49,9 @@ impl<'map: 'old + 'new, 'old, 'new> LightCache<'map, 'old> {
     //       Be smart about which ones need to propagate the change. Only additions or removals matter.
     /// Store an arbitrary set of portal lights on the region of their out_portal.
     /// needs to already have the new walls at this point
-    fn insert_portal_lights(map: &'map Map<'map>, new_cache: &mut LightCache<'map, 'new>, portal_lights: HashSet<PortalLight<'map, 'old>>) {
+    fn insert_portal_lights(map: & Map, new_cache: &mut LightCache, portal_lights: HashSet<PortalLight>) {
         for light in portal_lights {
-            let new_light: PortalLight<'map, 'new> = PortalLight {
+            let new_light: PortalLight = PortalLight {
                 id: light.id,
                 portal_in: &map.regions()[light.portal_in.region().index].walls()[0],
                 portal_out: &map.regions()[light.portal_out.region().index].walls()[0],
@@ -115,7 +64,7 @@ impl<'map: 'old + 'new, 'old, 'new> LightCache<'map, 'old> {
 
     /// Collect all times that a direct light in the region hits a portal.
     /// found_lights will contain PortalLights whose in_portal is in the same region as MapLight.
-    fn trace_direct_light(&'old self, light: &'map MapLight<'map>, found_lights: &mut HashSet<PortalLight<'map, 'old>>){
+    fn trace_direct_light(& self, light: & MapLight, found_lights: &mut HashSet<PortalLight>){
         // For every portal, cast a ray from the light to every point on the portal. The first time one hits, we care.
         for wall in light.region.walls() {
             let line = wall.line;
@@ -146,86 +95,14 @@ impl<'map: 'old + 'new, 'old, 'new> LightCache<'map, 'old> {
         }
     }
 
-    pub(crate) fn get_lighting_region(&'old self, map_region: &'map MapRegion) -> &'old LightingRegion<'map, 'old> {
+    pub(crate) fn get_lighting_region(& self, map_region: & MapRegion) -> & LightingRegion {
         self.lights.index(map_region.index)
-    }
-}
-
-impl<'map: 'walls, 'walls> LightSource<'map, 'walls> for PortalLight<'map, 'walls> {
-    fn intensity(&self) -> Colour {
-        self.light.intensity
-    }
-
-    fn apparent_pos(&self) -> &Vector2 {
-        &self.fake_position
-    }
-
-    fn region(&self) -> &MapRegion {
-        self.portal_out.region()
-    }
-
-    fn blocked_by_shadow(&'walls self, region: &'walls LightingRegion<'map, 'walls>, hit_pos: &Vector2) -> bool {
-        region.trace_clear_portal_light(self, *hit_pos).is_none()
-    }
-}
-
-/// A MapLight acts only on the region that directly contains it.
-/// Any other regions it should affect have a child PortalLight.
-impl<'map: 'walls, 'walls> LightSource<'map, 'walls> for MapLight<'map> {
-    fn intensity(&self) -> Colour {
-        self.intensity
-    }
-
-    fn apparent_pos(&self) -> &Vector2 {
-        &self.pos
-    }
-
-    fn region(&self) -> &MapRegion {
-        self.region
-    }
-
-    fn blocked_by_shadow(&self, region: &'walls LightingRegion<'map, 'walls>, hit_point: &Vector2) -> bool {
-        region.trace_clear_path_no_portals_between(self.pos, *hit_point).is_none()
-    }
-}
-
-struct LightSourceIter<'map, 'walls> {
-    i: usize,
-    region: &'walls LightingRegion<'map, 'walls>
-}
-
-impl<'map: 'walls, 'walls> Iterator for LightSourceIter<'map, 'walls> {
-    type Item = &'walls (dyn LightSource<'map, 'walls>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let direct_count = self.region.region.lights().len();
-        let indirect_count = self.region.portal_lights.len();
-        if self.i < direct_count {
-            Some(&self.region.region.lights()[self.i])
-        } else if self.i < (direct_count + indirect_count){
-            Some(&self.region.portal_lights[self.i - direct_count])
-        } else {
-            None
-        }
-    }
-}
-
-
-impl<'map: 'walls, 'walls> IntoIterator for &'walls LightingRegion<'map, 'walls> {
-    type Item = &'walls dyn LightSource<'map, 'walls>;
-    type IntoIter = LightSourceIter<'map, 'walls>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        LightSourceIter {
-            i: 0,
-            region: self
-        }
     }
 }
 
 // this doesn't need a recursion limit, because the HashSet prevents loops.
 // TODO: this will just reset everything in the whole world. Need to be smarter about which can see each other.
-fn find_lights_recursively<'map>(region: &'map MapRegion<'map>, mut found_walls: &mut HashSet<&MapWall<'map>>, mut found_lights: &mut HashSet<&MapLight<'map>>){
+fn find_lights_recursively(region: &Region, mut found_walls: &mut HashSet<&Wall>, mut found_lights: &mut HashSet<&LightSource>){
     for (i, light) in region.lights().iter().enumerate() {
         found_lights.insert(light);
     }
@@ -242,20 +119,20 @@ fn find_lights_recursively<'map>(region: &'map MapRegion<'map>, mut found_walls:
     }
 }
 
-impl<'map, 'walls> Into<&'map MapRegion<'map>> for &'map LightingRegion<'map, 'walls>{
-    fn into(self) -> &'map MapRegion<'map> {
+impl Into<& MapRegion> for & LightingRegion{
+    fn into(self) -> & MapRegion {
         self.region
     }
 }
 
-impl<'map, 'walls> Hash for PortalLight<'map, 'walls> {
+impl Hash for PortalLight {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl<'map, 'walls> Eq for PortalLight<'map, 'walls> {}
-impl<'map, 'walls> PartialEq for PortalLight<'map, 'walls> {
+impl Eq for PortalLight {}
+impl PartialEq for PortalLight {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }

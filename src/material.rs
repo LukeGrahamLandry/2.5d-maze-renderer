@@ -1,6 +1,5 @@
-use crate::lighting::LightSource;
-use crate::map_builder::MapRegion;
-use crate::mth::{EPSILON, LineSegment2, Vector2};
+use crate::mth::{EPSILON, Vector2};
+use crate::world::LightSource;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Colour {
@@ -95,15 +94,15 @@ impl Material {
 
     /// Does not do ray tracing. Just trusts that the values passed in are correct.
     /// https://en.wikipedia.org/wiki/Phong_reflection_model
-    pub(crate) fn calculate_wall_lighting(&self, light: &dyn LightSource, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2, in_shadow: bool) -> Colour {
-        let base_colour = self.colour.multiply(light.intensity());
+    pub(crate) fn calculate_wall_lighting(&self, light: &LightSource, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2, in_shadow: bool) -> Colour {
+        let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
 
         if in_shadow {
             return ambient_colour;
         }
 
-        let dir_to_light = light.apparent_pos().subtract(&hit_point).normalize();
+        let dir_to_light = light.pos.subtract(&hit_point).normalize();
         let light_on_front = dir_to_light.dot(&wall_normal) >= EPSILON;
         if !light_on_front {
             wall_normal = wall_normal.negate();
@@ -120,7 +119,7 @@ impl Material {
 
             if cos_reflect_to_eye >= 0.0 {
                 let factor = cos_reflect_to_eye.powf(self.shininess);
-                specular_colour = light.intensity().scale(self.specular * factor);
+                specular_colour = light.intensity.scale(self.specular * factor);
             }
         }
 
@@ -141,14 +140,14 @@ impl Material {
     const MAX_FLOOR_LIGHT_DISTANCE: f64 = 75.0 * Material::LIGHT_PILLAR_HEIGHT_SQUARED;
     const MAX_FLOOR_LIGHT_DISTANCE_SQUARED: f64 = Material::MAX_FLOOR_LIGHT_DISTANCE * Material::MAX_FLOOR_LIGHT_DISTANCE;
     /// Does not do ray tracing. Just trusts that the values passed in are correct.
-    pub(crate) fn calculate_floor_lighting(&self, light: &dyn LightSource, hit_point: Vector2, in_shadow: bool) -> Colour {
-        let base_colour = self.colour.multiply(light.intensity());
+    pub(crate) fn calculate_floor_lighting(&self, light: &LightSource, hit_point: Vector2, in_shadow: bool) -> Colour {
+        let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
         if in_shadow {
             return ambient_colour;
         }
 
-        let dist_to_light_sq = light.apparent_pos().subtract(&hit_point).length_sq();
+        let dist_to_light_sq = light.pos.subtract(&hit_point).length_sq();
         let diffuse_colour = if dist_to_light_sq < Material::MAX_FLOOR_LIGHT_DISTANCE_SQUARED {
             let diffuse_factor = (1.0 / dist_to_light_sq.sqrt()) * Material::LIGHT_PILLAR_HEIGHT_SQUARED;
             base_colour.scale(self.diffuse * diffuse_factor)

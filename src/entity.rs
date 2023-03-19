@@ -1,97 +1,33 @@
-use crate::light_cache::LightingRegion;
-use crate::lighting::LightSource;
-use crate::map_builder::MapRegion;
-use crate::material::{Colour, Material};
+use crate::material::{Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::ray::{Portal, SolidWall};
+use crate::world::{Portal, Wall};
 
-pub(crate) struct DynamicWall<'map, 'walls> {
-    line: LineSegment2,
-    material: Material,
-    region: &'map MapRegion<'map>,
-    portal: Option<Portal<'map, 'walls>>
-}
-
-
-pub(crate) struct DynamicLight<'map> {
-    region: &'map MapRegion<'map>,
-    intensity: Colour,
-    pos: Vector2
-}
-
-
-pub(crate) struct SquareEntity<'map> {
+pub(crate) struct SquareEntity {
     pub(crate) id: usize,
+    pub(crate) bb_ids: [usize; 4],
     pub(crate) pos: Vector2,
-    pub(crate) region: &'map MapRegion<'map>,
+    pub(crate) region: usize,
     pub(crate) radius: f64,
     pub(crate) material: Material,
 
 }
 
-impl<'map, 'walls> SquareEntity<'map> {
-    pub(crate) fn get_bounding_box(&self) -> Vec<Box<DynamicWall>> {
-        LineSegment2::new_square(self.pos.x - self.radius, self.pos.y - self.radius, self.pos.x + self.radius, self.pos.y + self.radius)
-            .into_iter().map(|line| Box::new(DynamicWall {
-            line,
-            material: self.material,
-            region: self.region,
-            portal: None,
-        })).collect()
-    }
-    pub(crate) fn update_bounding_box(&mut self, region: &mut LightingRegion<'map, 'walls>){
-        let bounding_box = self.get_bounding_box();
+impl SquareEntity {
+    pub(crate) fn get_bounding_box(&self) -> Vec<Wall> {
+        let lines = LineSegment2::new_square(self.pos.x - self.radius, self.pos.y - self.radius, self.pos.x + self.radius, self.pos.y + self.radius);
 
-        let light = vec![Box::new(DynamicLight {
-            region: self.region,
-            intensity: Colour::black(),
-            pos: self.pos
-        })];
+        let mut walls = Vec::with_capacity(4);
+        for (i, line) in lines.into_iter().enumerate() {
+            walls.push(Wall {
+                id: self.bb_ids[i],
+                line,
+                normal: line.normal(),
+                material: self.material,
+                region: self.region,
+                portal: Portal::NONE,
+            })
+        }
 
-        // region.update_entity(self.id, bounding_box, light);
+        walls
     }
 }
-
-
-
-impl<'map, 'walls> SolidWall<'map, 'walls> for DynamicWall<'map, 'walls> {
-    fn portal(&self) -> Option<Portal<'map, 'walls>> {
-        self.portal
-    }
-
-    fn material(&self) -> &Material {
-        &self.material
-    }
-
-    fn line(&self) -> LineSegment2 {
-        self.line
-    }
-
-    fn normal(&self) -> Vector2 {
-        self.line.normal()
-    }
-
-    fn region(&self) -> &'map MapRegion<'map> {
-        self.region
-    }
-}
-
-// impl<'map> LightSource for DynamicLight<'map> {
-//     fn intensity(&self) -> Colour {
-//         self.intensity
-//     }
-//
-//     fn apparent_pos(&self) -> &Vector2 {
-//         &self.pos
-//     }
-//
-//     // maybe Player needs to be the LightSource and then this method can check if flashlight on and facing the right way
-//     // but then the light cache would need an immutable reference to it which seems bad
-//     fn blocked_by_shadow(&self, hit_pos: &Vector2) -> bool {
-//         trace_clear_path_between(self.pos, *hit_pos, self.region).is_none()
-//     }
-//
-//     fn map_region(&self) -> &MapRegion {
-//         self.region
-//     }
-// }

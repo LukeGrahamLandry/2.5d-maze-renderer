@@ -1,20 +1,17 @@
-use std::ops::Index;
+use std::collections::HashMap;
 use maze;
 use maze::Grid;
-use crate::map_builder::MapBuilder;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::new_world::World;
-use crate::player::Player;
+use crate::world::{LightKind, LightSource, Portal, Region, Wall, World};
 
 const MAZE_SIZE: i32 = 10;
 const CELL_SIZE: i32 = 50;
 
-pub(crate) fn random_maze_world<'map, 'walls>() -> World<'map>  {
+pub(crate) fn random_maze_world() -> World  {
     let mut builder = MapBuilder::new();
     create_maze_region(&mut builder, MAZE_SIZE, CELL_SIZE);
-    let map = builder.build();
-    World::new(map, 0, Vector2::of((CELL_SIZE / 2) as f64, (CELL_SIZE / 2) as f64))
+    World::new(builder.build(), 0, Vector2::of((CELL_SIZE / 2) as f64, (CELL_SIZE / 2) as f64))
 }
 
 fn create_maze_region(builder: &mut MapBuilder, maze_size: i32, cell_size: i32){
@@ -154,7 +151,7 @@ fn condense_walls(horizontal: Vec<LineSegment2>, mut vertical: Vec<LineSegment2>
     smart_walls
 }
 
-pub(crate) fn example_preset<'map, 'walls>() -> World<'map>  {
+pub(crate) fn example_preset() -> World  {
     let mut builder = MapBuilder::new();
 
     let r0 = builder.new_square_region(100.0, 200.0, 300.0, 400.0, Material::default(Colour::rgb(0, 50, 50)));
@@ -172,6 +169,91 @@ pub(crate) fn example_preset<'map, 'walls>() -> World<'map>  {
     builder.bidirectional_portal(r0, 0, r1, 1);
     builder.bidirectional_portal(r1, 2, r2, 3);
 
-    let map = builder.build();
-    World::new(map, 0, Vector2::of(150.0, 250.0))
+    World::new(builder.build(), 0, Vector2::of(150.0, 250.0))
+}
+
+struct MapBuilder {
+    regions: Vec<Region>
+}
+
+impl MapBuilder {
+    pub(crate) fn new() -> MapBuilder {
+        MapBuilder {
+            regions: vec![]
+        }
+    }
+
+    pub(crate) fn new_region(&mut self, floor_material: Material) -> usize {
+        let i = self.regions.len();
+        self.regions.push(Region {
+            id: i,
+            walls: HashMap::new(),
+            lights: HashMap::new(),
+            floor_material
+        });
+
+        i
+    }
+
+    pub(crate) fn new_square_region(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, material: Material) -> usize {
+        let region = self.new_region(material);
+
+        let walls = LineSegment2::new_square(x1, y1, x2, y2);
+        let light_pos = walls[0].a.add(&walls[0].direction().scale(-0.25).add(&walls[2].direction().scale(-0.25)));
+        for i in 0..4 {
+            self.new_wall(region, walls[i], if i % 2 == 0 { walls[i].normal() } else { walls[i].normal().negate() }, Material::new(0.2, 0.2, 0.9));
+        }
+        self.new_light(region, Colour::white(), light_pos);
+
+        region
+    }
+
+    pub(crate) fn new_wall(&mut self, region_index: usize, line: LineSegment2, normal: Vector2, material: Material) -> usize {
+        let mut walls = &mut self.regions[region_index].walls;
+        let i = walls.len();
+        walls.insert(i, Wall {
+            id: i,
+            region: region_index,
+            line,
+            normal,
+            material,
+            portal: Portal::NONE,
+        });
+        i
+    }
+
+    pub(crate) fn unidirectional_portal(&mut self, from_region: usize, from_wall: usize, to_region: usize, to_wall: usize){
+        let mut from_wall = self.regions[from_region].walls.get_mut(&from_wall).expect("Invalid wall index.");
+        from_wall.portal = Portal::PORTAL {
+            next_wall: to_wall,
+            next_region: to_region,
+        }
+    }
+
+    pub(crate) fn bidirectional_portal(&mut self, from_region: usize, from_wall: usize, to_region: usize, to_wall: usize){
+        self.unidirectional_portal(from_region, from_wall, to_region, to_wall);
+        self.unidirectional_portal(to_region, to_wall, from_region, from_wall);
+    }
+
+    pub(crate) fn new_light(&mut self, region_index: usize, intensity: Colour, pos: Vector2){
+        let mut lights = &mut self.regions[region_index].lights;
+
+        let i = lights.len();
+        lights.insert(i, LightSource {
+            id: i,
+            intensity,
+            pos,
+            kind: LightKind::DIRECT(),
+        });
+    }
+
+    pub(crate) fn build(self) -> Vec<Region> {
+        self.regions
+    }
+
+    pub(crate) fn from_world(world: World) -> MapBuilder {
+        MapBuilder {
+            regions: world.regions,
+        }
+    }
 }

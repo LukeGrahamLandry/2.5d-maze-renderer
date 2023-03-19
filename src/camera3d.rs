@@ -1,15 +1,13 @@
 use crate::camera::*;
-use crate::material::{Colour, Material};
+use crate::material::{Colour};
 use crate::mth::Vector2;
-use crate::ray::{RaySegment, SolidWall};
+use crate::ray::{RaySegment};
 use sdl2::render::WindowCanvas;
 use std::sync::mpsc;
 use std::thread;
-use crate::light_cache::{LightCache, LightingRegion};
-use crate::new_world::World;
-use crate::player::Player;
+use crate::world::{Region, World};
 
-pub(crate) fn render<'map: 'walls, 'walls>(world: &'map World<'map> , window: &mut WindowCanvas, _delta_time: f64) {
+pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f64) {
     let (sender, receiver) = mpsc::channel();
 
     let thread_count = 3 as usize;
@@ -52,15 +50,15 @@ pub(crate) fn render<'map: 'walls, 'walls>(world: &'map World<'map> , window: &m
     });
 }
 
-fn render_column<'map: 'walls, 'walls>(world: &'map World<'map> , canvas: &mut RenderBuffer, raw_screen_x: usize) {
+fn render_column(world: & World , canvas: &mut RenderBuffer, raw_screen_x: usize) {
     // Adjust to what the x would be if the resolution factor was 1.
     // This makes lower resolutions have gaps instead of being squished on one side of the screen.
     let x = (raw_screen_x as f64 / RESOLUTION_FACTOR) as i32;
 
     let look_direction = ray_direction_for_x(x, &world.player().look_direction);
-    let region = world.get_light_cache().get_lighting_region(world.player().entity.region);
-    let segments = world.get_light_cache().ray_trace(
-        region,
+    let region = world.get_region(world.player().entity.region);
+    let segments = world.ray_trace(
+        region.id,
         world.player().entity.pos,
         look_direction,
     );
@@ -83,8 +81,8 @@ fn render_column<'map: 'walls, 'walls>(world: &'map World<'map> , canvas: &mut R
 
 fn draw_floor_segment<'map: 'walls, 'walls: 'frame, 'frame>(
     canvas: &mut RenderBuffer,
-    region: &'walls LightingRegion<'map, 'walls>,
-    segment: &'frame RaySegment<'map, 'walls>,
+    region: &Region,
+    segment: &'frame RaySegment,
     screen_x: i32,
     cumulative_dist: f64,
 ) {
@@ -132,7 +130,7 @@ fn draw_floor_segment<'map: 'walls, 'walls: 'frame, 'frame>(
 }
 
 // the sample_count should be high enough that we have one past the end to lerp to
-fn light_floor_segment<'map: 'walls, 'walls>(region: &'walls LightingRegion<'map, 'walls>, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
+fn light_floor_segment(region: &Region, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
     let ray_line = segment.line;
     let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
@@ -150,8 +148,8 @@ fn light_floor_segment<'map: 'walls, 'walls>(region: &'walls LightingRegion<'map
 
 fn draw_wall_3d<'map: 'walls, 'walls: 'frame, 'frame>(
     canvas: &mut RenderBuffer,
-    region: &'walls LightingRegion<'map, 'walls>,
-    hit: &'frame RaySegment<'map, 'walls>,
+    region: &Region,
+    hit: &RaySegment,
     ray_direction: Vector2,
     cumulative_dist: f64,
     screen_x: i32,

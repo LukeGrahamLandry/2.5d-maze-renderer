@@ -4,7 +4,7 @@ use crate::{camera2d, camera3d};
 use sdl2::pixels::Color;
 use sdl2::render::WindowCanvas;
 use std::f64::consts::PI;
-use crate::new_world::World;
+use crate::world::World;
 
 pub const FOV_DEG: i32 = 45;
 pub const SCREEN_HEIGHT: f64 = 600.0;
@@ -12,7 +12,7 @@ pub const SCREEN_WIDTH: u32 = 800;
 pub const RESOLUTION_FACTOR: f64 = 1.0;
 pub const LIGHT_RAY_COUNT_2D: i32 = 32;
 
-pub(crate) fn render_scene<'map: 'walls, 'walls>(mut canvas: &mut WindowCanvas, world: &'map World<'map> , delta_time: f64) {
+pub(crate) fn render_scene(mut canvas: &mut WindowCanvas, world: & World , delta_time: f64) {
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
@@ -58,13 +58,13 @@ pub(crate) struct ColouredLine {
     pub(crate) b: Vector2,
 }
 
-pub(crate) struct RenderBuffer<'map> {
+pub(crate) struct RenderBuffer {
     current_colour: Colour,
     pub(crate) offset: Vector2,
-    sender: &'map mut dyn FnMut(ColouredLine),
+    sender: &'static mut dyn FnMut(ColouredLine),
 }
 
-impl<'map> RenderBuffer<'map> {
+impl RenderBuffer {
     pub(crate) fn new(sender: &mut dyn FnMut(ColouredLine)) -> RenderBuffer {
         RenderBuffer {
             sender,

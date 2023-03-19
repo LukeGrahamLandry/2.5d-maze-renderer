@@ -16,9 +16,8 @@ mod ray;
 mod material;
 mod camera2d;
 mod camera;
-mod map_builder;
 mod light_cache;
-mod new_world;
+mod world;
 mod lighting;
 mod entity;
 
