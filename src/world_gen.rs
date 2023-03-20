@@ -3,7 +3,7 @@ use maze;
 use maze::Grid;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::world::{LightKind, LightSource, Portal, Region, Wall, World};
+use crate::world::{FloorLightCache, LightKind, LightSource, Portal, Region, Wall, World};
 
 const MAZE_SIZE: i32 = 10;
 const CELL_SIZE: i32 = 50;
@@ -17,9 +17,9 @@ pub(crate) fn random_maze_world() -> World  {
 fn create_maze_region(builder: &mut MapBuilder, maze_size: i32, cell_size: i32){
     let mut floor_material = Material::default(Colour::rgb(100, 100, 150));
     floor_material.ambient = 0.05;
-    let region = builder.new_region(floor_material);
 
     let mut grid = maze::Grid::new(maze_size, maze_size);
+    let region = builder.new_region(floor_material, FloorLightCache::new(Vector2::zero(), Vector2::of((CELL_SIZE * cell_size) as f64, (CELL_SIZE * cell_size) as f64)));
     let walls = gen_maze_lines(&mut grid, cell_size);
     let count = walls.len();
     for wall in walls {
@@ -183,20 +183,21 @@ impl MapBuilder {
         }
     }
 
-    pub(crate) fn new_region(&mut self, floor_material: Material) -> usize {
+    pub(crate) fn new_region(&mut self, floor_material: Material, lighting: FloorLightCache) -> usize {
         let i = self.regions.len();
         self.regions.push(Region {
             id: i,
             walls: HashMap::new(),
             lights: HashMap::new(),
-            floor_material
+            floor_material,
+            lighting
         });
 
         i
     }
 
     pub(crate) fn new_square_region(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, material: Material) -> usize {
-        let region = self.new_region(material);
+        let region = self.new_region(material, FloorLightCache::new(Vector2::of(x1, y1), Vector2::of(x2, y2)));
 
         let walls = LineSegment2::new_square(x1, y1, x2, y2);
         let light_pos = walls[0].a.add(&walls[0].direction().scale(-0.25).add(&walls[2].direction().scale(-0.25)));

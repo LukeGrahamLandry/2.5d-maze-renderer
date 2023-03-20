@@ -14,7 +14,11 @@ impl World {
     pub(crate) fn init_lighting(&mut self){
         let portal_hits = self.collect_portal_lights();
         for (id, portal_light) in portal_hits.into_iter() {
-            self.regions[portal_light.region].lights.insert(portal_light.id, portal_light);
+            self.add_portal_light(portal_light);
+        }
+
+        for region in &mut self.regions {
+            region.init_floor_lighting_cache();
         }
     }
 
@@ -28,6 +32,31 @@ impl World {
         }
         portal_hits
     }
+
+    pub(crate) fn update_lighting(&mut self){
+        for region in self.regions.iter_mut() {
+            let mut portal_lights = vec![];
+
+            for (id, light) in region.lights.iter() {
+                match light.kind {
+                    LightKind::DIRECT() => {}
+                    PORTAL { .. } => {
+                        portal_lights.push(*id);
+                    }
+                }
+            }
+
+            for id in portal_lights {
+                region.lights.remove(&id);
+            }
+        }
+
+        self.init_lighting();
+    }
+
+    fn add_portal_light(&mut self, portal_light: LightSource) {
+        self.regions[portal_light.region].lights.insert(portal_light.id, portal_light);
+    }
 }
 
 impl Region {
@@ -35,8 +64,6 @@ impl Region {
     fn trace_portal_light(&self, light: &LightSource, found: &mut HashMap<usize, LightSource>){
         assert_eq!(self.id, light.region);
         for wall in self.walls() {
-            let line = wall.line();
-            let normal = wall.normal();
             match wall.portal() {
                 // If it's not a portal, we ignore it.
                 None => {}
@@ -76,5 +103,20 @@ impl Region {
                 }
             }
         }
+    }
+
+    pub(crate) fn init_floor_lighting_cache(&mut self){
+        for x in 0..self.lighting.width {
+            for y in 0..self.lighting.height {
+                let pos = Vector2::of(x as f64, y as f64).add(&self.lighting.top_left);
+                let colour = self.horizontal_surface_colour(pos);
+                self.lighting.floor_light_cache[y * self.lighting.width + x] = colour;
+            }
+        }
+    }
+
+
+    fn check_portal_light(){
+
     }
 }

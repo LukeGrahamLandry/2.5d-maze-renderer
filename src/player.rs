@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::RwLock;
 
@@ -36,10 +37,10 @@ impl Player {
         Player {
             entity: SquareEntity {
                 id: 0,
-                bb_ids: [1, 2, 3, 4],
+                bb_ids: [maze::rand(), maze::rand(), maze::rand(), maze::rand()],
                 pos,
                 region: start_region,
-                radius: 0.0,
+                radius: 1.0,
                 material: Material::new(1.0, 0.1, 0.1),
             },
             look_direction: Vector2::of(0.0, -1.0),
@@ -57,6 +58,9 @@ impl Player {
         };
 
         if moved {
+            // let bb_ids = world.player().entity.bb_ids;
+            // bb_ids.iter().for_each(|w| world.remove_wall(world.player().entity.region, *w));
+
             let dir = world.player_mut().move_direction;
             let move_direction= Player::handle_collisions(world, dir);
 
@@ -64,6 +68,9 @@ impl Player {
             player.entity.pos.x += move_direction.x * delta_time * MOVE_SPEED;
             player.entity.pos.y += move_direction.y * delta_time * MOVE_SPEED;
             *player.needs_render_update.write().unwrap() = true;
+
+            // let bb = world.player.entity.get_bounding_box();
+            // bb.into_iter().for_each(|w| world.add_wall(w));
         }
 
         moved
@@ -209,6 +216,7 @@ impl Player {
             }
         }
 
+        world.update_lighting();
         *(world.player_mut().needs_render_update.write().unwrap()) = true;
     }
 
@@ -220,7 +228,7 @@ impl Player {
                 world.regions[portal.region].walls.remove(&portal.wall);
             }
         }
-
+        world.player_mut().portals[portal_index] = None;
     }
 
     pub(crate) fn place_portal(mut world: &mut World, mut portal: Wall, replacing_index: usize, connecting_index: usize) {
@@ -238,7 +246,7 @@ impl Player {
         match &connecting_portal {
             None => {}
             Some(connecting_portal) => {
-                let other_portal = world.regions[connecting_portal.region].walls.get_mut(&connecting_portal.wall).unwrap();
+                let other_portal = world.wall_mut(connecting_portal.region, connecting_portal.wall);
                 portal.portal = Portal::new(&portal, other_portal);
                 other_portal.portal = Portal::new(other_portal, &portal);
             }

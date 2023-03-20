@@ -144,7 +144,7 @@ fn light_floor_segment(region: &Region, segment: &RaySegment, sample_length: f64
                 .normalize()
                 .scale(i as f64 * -sample_length),
         );
-        samples.push(region.horizontal_surface_colour(pos));
+        samples.push(region.lighting.colour_at(pos));
     }
 
     samples

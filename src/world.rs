@@ -14,7 +14,42 @@ pub(crate) struct Region {
     pub(crate) id: usize,
     pub(crate) walls: HashMap<usize, Wall>,
     pub(crate) lights: HashMap<usize, LightSource>,
-    pub(crate) floor_material: Material
+    pub(crate) floor_material: Material,
+    pub(crate) lighting: FloorLightCache
+
+}
+
+pub(crate) struct FloorLightCache {
+    pub(crate) floor_light_cache: Box<[Colour]>,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) top_left: Vector2
+}
+
+impl FloorLightCache {
+    pub(crate) fn new(min: Vector2, max: Vector2) -> FloorLightCache {
+        let width = (max.x - min.x).abs().ceil() as usize;
+        let height = (max.y - min.y).abs().ceil() as usize;
+        FloorLightCache {
+            width,
+            height,
+            floor_light_cache: vec![Colour::black(); width * height].into_boxed_slice(),
+            top_left: min,
+        }
+    }
+
+    pub(crate) fn colour_at(&self, pos: Vector2) -> Colour {
+        let local = pos.subtract(&self.top_left);
+        let x = local.x.floor() as usize;
+        let y = local.y.floor() as usize;
+
+        let outside = x >= self.width || y >= self.height;
+        if outside {
+            Colour::black()
+        } else {
+            self.floor_light_cache[y * self.width + x]
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -75,6 +110,9 @@ impl World {
             player: Player::new(start_region_index, start_pos)
         };
 
+        // let bb = world.player.entity.get_bounding_box();
+        // bb.into_iter().for_each(|w| world.add_wall(w));
+
         world.init_lighting();
 
         world
@@ -98,6 +136,18 @@ impl World {
 
     pub(crate) fn player(&self) -> &Player {
         &self.player
+    }
+
+    pub(crate) fn wall_mut(&mut self, region: usize, wall: usize) -> &mut Wall {
+        self.regions[region].walls.get_mut(&wall).expect("Invalid wall index.")
+    }
+
+    pub(crate) fn remove_wall(&mut self, region: usize, wall: usize) {
+        self.regions[region].walls.remove(&wall).expect("Invalid wall index");
+    }
+
+    pub(crate) fn add_wall(&mut self, wall: Wall) {
+        self.regions[wall.region].walls.insert(wall.id, wall);
     }
 }
 

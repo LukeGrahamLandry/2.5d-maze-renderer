@@ -92,7 +92,6 @@ impl Material {
         }
     }
 
-    /// Does not do ray tracing. Just trusts that the values passed in are correct.
     /// https://en.wikipedia.org/wiki/Phong_reflection_model
     pub(crate) fn calculate_wall_lighting(&self, light: &LightSource, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2, in_shadow: bool) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
@@ -139,7 +138,7 @@ impl Material {
     const LIGHT_PILLAR_HEIGHT_SQUARED: f64 = 25.0;
     const MAX_FLOOR_LIGHT_DISTANCE: f64 = 75.0 * Material::LIGHT_PILLAR_HEIGHT_SQUARED;
     const MAX_FLOOR_LIGHT_DISTANCE_SQUARED: f64 = Material::MAX_FLOOR_LIGHT_DISTANCE * Material::MAX_FLOOR_LIGHT_DISTANCE;
-    /// Does not do ray tracing. Just trusts that the values passed in are correct.
+
     pub(crate) fn calculate_floor_lighting(&self, light: &LightSource, hit_point: Vector2, in_shadow: bool) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
         let ambient_colour = base_colour.scale(self.ambient);
