@@ -46,7 +46,7 @@ pub fn run() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut world = example_preset();
+    let mut world = random_maze_world();
 
     canvas.clear();
     canvas.present();
@@ -125,6 +125,7 @@ pub fn run() -> Result<(), String> {
         world.update(duration, &keys, delta_mouse);
 
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
+        // TODO: this needs to wait for lighting updates
         let needs_render_update = *world.player().needs_render_update.read().unwrap();
         let sleep_time = if needs_render_update {
             camera::render_scene(&mut canvas, &world, duration);

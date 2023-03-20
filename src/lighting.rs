@@ -6,9 +6,9 @@ use crate::world::{LightSource, Region};
 impl Region {
     /// Calculates the colour of a column of wall based on all lights in the region.
     pub(crate) fn vertical_surface_colour(&self, hit_point: &Vector2, wall: usize, ray_direction: Vector2) -> Colour {
-        let mut colour = Colour::black();
         let to_eye = ray_direction.negate().normalize();
         let wall = self.get_wall(wall);
+        let mut colour = wall.material().white_ambient();
         for light in self.lights() {
             colour = colour.add(self.wall_lighting(wall.material(), light, hit_point, wall.normal(), &to_eye));
         }
@@ -18,7 +18,7 @@ impl Region {
 
     /// Calculates the colour of a point on the floor based on all lights in the region.
     pub(crate) fn horizontal_surface_colour(&self, hit_pos: Vector2) -> Colour {
-        let mut colour = Colour::black();
+        let mut colour = self.floor_material.white_ambient();
         for light in self.lights() {
             colour = colour.add(self.floor_lighting(&self.floor_material, light, hit_pos));
         }

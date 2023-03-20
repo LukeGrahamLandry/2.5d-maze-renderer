@@ -1,4 +1,5 @@
 use std::{collections::HashSet, hash::Hash, thread};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::hash::Hasher;
 use std::ops::Index;
@@ -109,6 +110,8 @@ impl Region {
     }
 
     pub(crate) fn new_light_cache(min: Vector2, max: Vector2) -> Arc<FloorLightCache> {
+        let min = min.subtract(&Vector2::of(1.0, 1.0));
+        let max = max.add(&Vector2::of(1.0, 1.0));
         let width = (max.x - min.x).abs().ceil() as usize;
         let height = (max.y - min.y).abs().ceil() as usize;
 
@@ -120,10 +123,10 @@ impl Region {
         })
     }
 
-    fn empty_light_cache(count: usize) -> Box<[RwLock<Option<Colour>>]> {
+    fn empty_light_cache(count: usize) -> Box<[Cell<Option<Colour>>]> {
         let mut cache = Vec::with_capacity(count);
         for _ in 0..count {
-            cache.push(RwLock::new(None));
+            cache.push(Cell::new(None));
         }
         cache.into_boxed_slice()
     }
@@ -135,17 +138,16 @@ impl Region {
         let y = local.y.floor() as usize;
 
         let outside = x >= lighting.width || y >= lighting.height;
-        if outside {
-            Colour::black()
+        if outside {  // This shouldn't happen so make it look obviously wrong.
+            Colour::rgb(255, 0, 255)
         } else {
             let cached = {
-                lighting.floor_light_cache[y * lighting.width + x].read().unwrap().clone()
+                lighting.floor_light_cache[y * lighting.width + x].get()
             };
             match cached {
                 None => {
                     let colour = self.horizontal_surface_colour(pos);
-                    let mut cached = lighting.floor_light_cache[y * lighting.width + x].write().unwrap();
-                    *cached = Some(colour);
+                    lighting.floor_light_cache[y * lighting.width + x].replace(Some(colour));
                     colour
                 }
                 Some(colour) => {
@@ -155,21 +157,20 @@ impl Region {
         }
     }
 
-    // this could take mut and just replace the whole lock object instead of checking to get locked write access every time which would be ~10x faster
-    // but still noticeably slow for very large regions. putting it in a thread that gradually resets takes longer over all
-    // but means the game can continue as its happening and you just get the wrong floor lighting for a tiny amount of time.
-    // but it does mean that the whole light cache needs to be in an Arc because the thread can't hold the borrow of the region.
-    // but the arc has a cost for cloning, not for reading so it doesnt matter.
-
     pub(crate) fn clear_floor_lighting_cache(&self){
         let lighting = self.lighting.clone();
 
         thread::spawn(move || {
-            println!("start clear_floor_lighting_cache");
             lighting.floor_light_cache.iter().for_each(|cache| {
-                *cache.write().unwrap() = None;
+                cache.set(None);
             });
-            println!("done clear_floor_lighting_cache");
         });
     }
 }
+
+// The Cells are the problem but I don't care about races on set calls.
+// sets from horizontal_surface_colour_memoized will always be based on the current correct lighting (multiple will be the same).
+// If that races with clear_floor_lighting_cache either it will end up None and just be recomputed next frame,
+// or it will get the value instead of None but the value will be based on the new lighting anyway
+// so its just done a frame early.
+unsafe impl Sync for FloorLightCache {}

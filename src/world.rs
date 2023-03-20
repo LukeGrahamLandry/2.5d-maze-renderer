@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use sdl2::keyboard::Keycode;
@@ -20,7 +21,7 @@ pub(crate) struct Region {
 }
 
 pub(crate) struct FloorLightCache {
-    pub(crate) floor_light_cache: Box<[RwLock<Option<Colour>>]>,
+    pub(crate) floor_light_cache: Box<[Cell<Option<Colour>>]>,
     pub(crate) width: usize,
     pub(crate) height: usize,
     pub(crate) top_left: Vector2

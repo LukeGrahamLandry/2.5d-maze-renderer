@@ -1,3 +1,4 @@
+use std::arch::aarch64::float64x1_t;
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::RwLock;
@@ -7,6 +8,7 @@ use sdl2::mouse::MouseButton;
 use maze::rand;
 use crate::entity::{SquareEntity};
 use crate::material::{Colour, Material};
+use crate::mth;
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::RaySegment;
 use crate::world::{Portal, Wall, World};
@@ -62,7 +64,7 @@ impl Player {
             // bb_ids.iter().for_each(|w| world.remove_wall(world.player().entity.region, *w));
 
             let dir = world.player_mut().move_direction;
-            let move_direction= Player::handle_collisions(world, dir);
+            let move_direction= Player::handle_collisions(world, dir, 100.0);
 
             let player = world.player_mut();
             player.entity.pos.x += move_direction.x * delta_time * MOVE_SPEED;
@@ -76,36 +78,26 @@ impl Player {
         moved
     }
 
-    pub(crate) fn handle_collisions(world: &mut World, mut move_direction: Vector2) -> Vector2 {
+    pub(crate) fn handle_collisions(world: &mut World, mut move_direction: Vector2, max_dist_sq: f64) -> Vector2 {
         let player = &mut world.player;
         let region = &world.regions[player.entity.region];
-        let player_size = 20.0;
-        let ray = LineSegment2::from(player.entity.pos, move_direction.scale(player_size));
 
-        let mut wall = None;
-        for check_wall in region.walls() {
-            let hit_pos = check_wall.line().intersection(&ray);
-            if !hit_pos.is_nan() {
-                wall = Some(check_wall.clone());
-            }
+        let hit = region.single_ray_trace(player.entity.pos, move_direction);
+        if hit.line.length_sq() > max_dist_sq {
+            return move_direction;
         }
-
-        match wall {
-            None => {
-                return move_direction
-            }
-            Some(wall) => {
-                let hit_pos = wall.line().intersection(&ray);
-                let t = wall.line().t_of(&hit_pos).abs();
-                let hit_edge = t < 0.01 || t > 0.99;
+        match hit.hit_wall {
+            None => {}
+            Some(wall_index) => {
+                let wall = region.get_wall(wall_index);
                 let hit_back = wall.normal().dot(&move_direction) > 0.0;
                 let wall_dir_unit = wall.line().direction().normalize();
                 let slide_direction = wall_dir_unit.scale(move_direction.dot(&wall_dir_unit));
 
-                if hit_back || hit_edge {
+                if hit_back {
                     move_direction = slide_direction;
                 } else {
-                    match &wall.portal() {
+                    match wall.portal() {
                         None => {
                             move_direction = slide_direction;
                         }
@@ -113,20 +105,29 @@ impl Player {
                             // TODO: tell the region that the entity switched
                             player.entity.region = portal.to_region;
 
+                            let walking_backwards = wall.normal().dot(&player.look_direction) > mth::EPSILON;
+
                             player.entity.pos = portal.translate(player.entity.pos);
                             player.look_direction = portal.rotate(player.look_direction);
-                            player.move_direction = portal.rotate(player.move_direction);
+                            move_direction = portal.rotate(move_direction);
+
+                            if walking_backwards {
+                                player.look_direction = player.look_direction.negate();
+                            }
+
                             player.entity.pos = player.entity.pos.add(&move_direction);
+                            return move_direction;
                         }
                     }
                 }
             }
         }
 
+
         if move_direction.length() > 0.1 {
-            Player::handle_collisions(world, move_direction)
+            Player::handle_collisions(world, move_direction.scale(0.9), max_dist_sq)
         } else {
-            move_direction
+            Vector2::zero()
         }
     }
 
@@ -184,8 +185,9 @@ impl Player {
                     } else {
                         hit_wall.normal.negate()
                     };
-                    let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(10.0));
-                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(10.0));
+                    let bump_dist = 0.1;
+                    let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(bump_dist));
+                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(bump_dist));
 
                     let wall = Wall {
                         id: rand(),

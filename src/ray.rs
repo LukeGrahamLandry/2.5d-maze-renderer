@@ -100,17 +100,14 @@ impl Region {
         }
 
         let direction = target.subtract(&ray_hit_portal_pos);
-
-        let ray = LineSegment2::from(ray_hit_portal_pos.add(&direction.tiny()), direction.scale(1.0 - (5.0 * EPSILON)));
-        for wall in self.walls() {
-            let hit = wall.line().intersection(&ray);
-            if !hit.is_nan() {
-                return None;
+        match self.trace_clear_path_no_portals_between(ray_hit_portal_pos.add(&direction.tiny().scale(5.0)), target) {
+            None => {
+                None
+            }
+            Some(_) => {
+                Some(ray)
             }
         }
-
-        Some(ray)
-
     }
 
     /// Sends a ray through a single region until it hits a wall. Without following portals.

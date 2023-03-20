@@ -94,7 +94,7 @@ fn draw_floor_segment(
 
     let length = ray_line.length();
     let sample_length = 1.0;
-    let sample_count = (length / sample_length).round() as i32 + 1;
+    let sample_count = (length / sample_length).ceil() as i32 + 1;
 
     // The top of the last floor segment is the bottom of this one.
     // The top of the floor segment is the bottom of where we'd draw if it was a wall.
@@ -102,16 +102,17 @@ fn draw_floor_segment(
     let mut last_top = SCREEN_HEIGHT - pixels_drawn;
 
     for i in 0..sample_count {
-        let pos = ray_line.a.add(&ray_direction.scale(i as f64 * -sample_length));
+        // the -1 fixes the square of black at the base of a wall. It uses the colour right before the wall instead of right after the wall (which would be in shadow)
+        let pos = ray_line.a.add(&ray_direction.scale((i - 2) as f64 * -sample_length));
         let colour = region.horizontal_surface_colour_memoized(pos);
 
         let dist = cumulative_dist + (i as f64 * sample_length);
         let (_, top) = project_to_screen(dist);
         let bottom = last_top;
 
-        if (top - bottom).abs() < 2.0 {
-            continue;
-        }
+        // if (top - bottom).abs() < 2.0 {
+        //     continue;
+        // }
 
         canvas.set_draw_color(colour);
         canvas.draw_between(

@@ -92,10 +92,14 @@ impl Material {
         }
     }
 
+    pub(crate) fn white_ambient(&self) -> Colour {
+        self.colour.scale(self.ambient * 2.0)
+    }
+
     /// https://en.wikipedia.org/wiki/Phong_reflection_model
     pub(crate) fn calculate_wall_lighting(&self, light: &LightSource, hit_point: &Vector2, mut wall_normal: Vector2, to_eye: &Vector2, in_shadow: bool) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
-        let ambient_colour = base_colour.scale(self.ambient);
+        let ambient_colour = Colour::black(); // base_colour.scale(self.ambient);
 
         if in_shadow {
             return ambient_colour;
@@ -141,7 +145,7 @@ impl Material {
 
     pub(crate) fn calculate_floor_lighting(&self, light: &LightSource, hit_point: Vector2, in_shadow: bool) -> Colour {
         let base_colour = self.colour.multiply(light.intensity);
-        let ambient_colour = base_colour.scale(self.ambient);
+        let ambient_colour = Colour::black(); // base_colour.scale(self.ambient);
         if in_shadow {
             return ambient_colour;
         }
