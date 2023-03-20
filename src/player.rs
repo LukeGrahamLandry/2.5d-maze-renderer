@@ -79,7 +79,7 @@ impl Player {
     pub(crate) fn handle_collisions(world: &mut World, mut move_direction: Vector2) -> Vector2 {
         let player = &mut world.player;
         let region = &world.regions[player.entity.region];
-        let player_size = 11.0;
+        let player_size = 20.0;
         let ray = LineSegment2::from(player.entity.pos, move_direction.scale(player_size));
 
         let mut wall = None;

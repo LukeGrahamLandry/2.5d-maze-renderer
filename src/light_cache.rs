@@ -1,13 +1,15 @@
-use std::{collections::HashSet, hash::Hash};
+use std::{collections::HashSet, hash::Hash, thread};
 use std::collections::HashMap;
 use std::hash::Hasher;
 use std::ops::Index;
+use std::sync::atomic::AtomicI8;
+use std::sync::{Arc, RwLock};
 
 use crate::{mth::{Vector2}, world::World};
 use crate::material::{Colour};
 use crate::mth::{EPSILON, LineSegment2};
 use crate::ray::RaySegment;
-use crate::world::{LightKind, LightSource, Portal, Region, Wall};
+use crate::world::{FloorLightCache, LightKind, LightSource, Portal, Region, Wall};
 use crate::world::LightKind::PORTAL;
 
 impl World {
@@ -15,10 +17,6 @@ impl World {
         let portal_hits = self.collect_portal_lights();
         for (id, portal_light) in portal_hits.into_iter() {
             self.add_portal_light(portal_light);
-        }
-
-        for region in &mut self.regions {
-            region.init_floor_lighting_cache();
         }
     }
 
@@ -33,6 +31,7 @@ impl World {
         portal_hits
     }
 
+    // TODO: be smart about which parts actually need to be recomputed
     pub(crate) fn update_lighting(&mut self){
         for region in self.regions.iter_mut() {
             let mut portal_lights = vec![];
@@ -52,6 +51,10 @@ impl World {
         }
 
         self.init_lighting();
+
+        for region in &mut self.regions {
+            region.clear_floor_lighting_cache();
+        }
     }
 
     fn add_portal_light(&mut self, portal_light: LightSource) {
@@ -105,18 +108,68 @@ impl Region {
         }
     }
 
-    pub(crate) fn init_floor_lighting_cache(&mut self){
-        for x in 0..self.lighting.width {
-            for y in 0..self.lighting.height {
-                let pos = Vector2::of(x as f64, y as f64).add(&self.lighting.top_left);
-                let colour = self.horizontal_surface_colour(pos);
-                self.lighting.floor_light_cache[y * self.lighting.width + x] = colour;
+    pub(crate) fn new_light_cache(min: Vector2, max: Vector2) -> Arc<FloorLightCache> {
+        let width = (max.x - min.x).abs().ceil() as usize;
+        let height = (max.y - min.y).abs().ceil() as usize;
+
+        Arc::new(FloorLightCache {
+            width,
+            height,
+            floor_light_cache: Region::empty_light_cache(width * height),
+            top_left: min,
+        })
+    }
+
+    fn empty_light_cache(count: usize) -> Box<[RwLock<Option<Colour>>]> {
+        let mut cache = Vec::with_capacity(count);
+        for _ in 0..count {
+            cache.push(RwLock::new(None));
+        }
+        cache.into_boxed_slice()
+    }
+
+    pub(crate) fn horizontal_surface_colour_memoized(&self, pos: Vector2) -> Colour {
+        let lighting = &self.lighting;
+        let local = pos.subtract(&lighting.top_left);
+        let x = local.x.floor() as usize;
+        let y = local.y.floor() as usize;
+
+        let outside = x >= lighting.width || y >= lighting.height;
+        if outside {
+            Colour::black()
+        } else {
+            let cached = {
+                lighting.floor_light_cache[y * lighting.width + x].read().unwrap().clone()
+            };
+            match cached {
+                None => {
+                    let colour = self.horizontal_surface_colour(pos);
+                    let mut cached = lighting.floor_light_cache[y * lighting.width + x].write().unwrap();
+                    *cached = Some(colour);
+                    colour
+                }
+                Some(colour) => {
+                    colour
+                }
             }
         }
     }
 
+    // this could take mut and just replace the whole lock object instead of checking to get locked write access every time which would be ~10x faster
+    // but still noticeably slow for very large regions. putting it in a thread that gradually resets takes longer over all
+    // but means the game can continue as its happening and you just get the wrong floor lighting for a tiny amount of time.
+    // but it does mean that the whole light cache needs to be in an Arc because the thread can't hold the borrow of the region.
+    // but the arc has a cost for cloning, not for reading so it doesnt matter.
 
-    fn check_portal_light(){
+    pub(crate) fn clear_floor_lighting_cache(&self){
+        let lighting = self.lighting.clone();
 
+        thread::spawn(move || {
+            println!("start clear_floor_lighting_cache");
+            lighting.floor_light_cache.iter().for_each(|cache| {
+                *cache.write().unwrap() = None;
+            });
+            println!("done clear_floor_lighting_cache");
+        });
     }
 }

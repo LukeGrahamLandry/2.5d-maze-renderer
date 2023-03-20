@@ -90,65 +90,40 @@ fn draw_floor_segment(
     assert_eq!(region.id, segment.region);
 
     let ray_line = segment.line;
+    let ray_direction = ray_line.direction().normalize();
 
     let length = ray_line.length();
-    let sample_length = 10.0;
+    let sample_length = 1.0;
     let sample_count = (length / sample_length).round() as i32 + 1;
-
-    let samples = light_floor_segment(region, &segment, sample_length, sample_count + 1);
 
     // The top of the last floor segment is the bottom of this one.
     // The top of the floor segment is the bottom of where we'd draw if it was a wall.
     let (pixels_drawn, _) = project_to_screen(cumulative_dist);
     let mut last_top = SCREEN_HEIGHT - pixels_drawn;
 
-    let steps_per_unit = 1.0;
-    let units_per_step = 1.0 / steps_per_unit;
-    let steps_per_sample = (sample_length.round() + 1.0) * steps_per_unit;
-
-    for s in 0..sample_count {
-        let current = samples[s as usize];
-        let next = samples[(s + 1) as usize];
-
-        for i in 0..(steps_per_sample as i32) {
-            let dist = cumulative_dist + (s as f64 * sample_length) + (i as f64 * units_per_step);
-            let (_, top) = project_to_screen(dist);
-            let bottom = last_top;
-
-            if (top - bottom).abs() < 2.0 {
-                continue;
-            }
-
-            let t = i as f64 / steps_per_sample;
-            let colour = current.lerp(&next, t); // TODO: its a quadratic not a line.
-            canvas.set_draw_color(colour);
-            canvas.draw_between(
-                Vector2::of(screen_x as f64, bottom),
-                Vector2::of(screen_x as f64, top),
-            );
-
-            last_top = top;
-        }
-    }
-}
-
-// the sample_count should be high enough that we have one past the end to lerp to
-fn light_floor_segment(region: &Region, segment: &RaySegment, sample_length: f64, sample_count: i32) -> Vec<Colour> {
-    assert_eq!(region.id, segment.region);
-    let ray_line = segment.line;
-    let mut samples: Vec<Colour> = Vec::with_capacity((sample_count) as usize);
     for i in 0..sample_count {
-        let pos = ray_line.a.add(
-            &ray_line
-                .direction()
-                .normalize()
-                .scale(i as f64 * -sample_length),
-        );
-        samples.push(region.lighting.colour_at(pos));
-    }
+        let pos = ray_line.a.add(&ray_direction.scale(i as f64 * -sample_length));
+        let colour = region.horizontal_surface_colour_memoized(pos);
 
-    samples
+        let dist = cumulative_dist + (i as f64 * sample_length);
+        let (_, top) = project_to_screen(dist);
+        let bottom = last_top;
+
+        if (top - bottom).abs() < 2.0 {
+            continue;
+        }
+
+        canvas.set_draw_color(colour);
+        canvas.draw_between(
+            Vector2::of(screen_x as f64, bottom),
+            Vector2::of(screen_x as f64, top),
+        );
+
+        last_top = top;
+    }
 }
+
+
 
 fn draw_wall_3d(canvas: &mut RenderBuffer, region: &Region, hit: &RaySegment, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     assert_eq!(region.id, hit.region);
