@@ -5,7 +5,7 @@ use std::ops::Index;
 
 use crate::{mth::{Vector2}, world::World};
 use crate::material::{Colour};
-use crate::mth::LineSegment2;
+use crate::mth::{EPSILON, LineSegment2};
 use crate::ray::RaySegment;
 use crate::world::{LightKind, LightSource, Portal, Region, Wall};
 use crate::world::LightKind::PORTAL;
@@ -23,7 +23,7 @@ impl World {
         for region in 0..self.regions.len() {
             let region = self.get_region(region);
             for light in region.lights(){
-                region.trace_direct_light(light, &mut portal_hits);
+                region.trace_portal_light(light, &mut portal_hits);
             }
         }
         portal_hits
@@ -31,49 +31,46 @@ impl World {
 }
 
 impl Region {
-    fn insert_portal_light(&mut self, light: &LightSource, portal_wall: &Wall, portal: &Portal, path: RaySegment){
-        let adjusted_origin = portal.translate(path.line.b);
-
-        let id = maze::rand();
-        let portal_light = LightSource {
-            id: id,
-            region: self.id,
-            intensity: light.intensity,
-            pos: adjusted_origin,
-            kind: PORTAL {
-                line: portal_wall.line,
-            },
-        };
-        
-        self.lights.insert(id, portal_light);
-    }
-
-    /// Collect all times that a direct light in the region hits a portal.
-    fn trace_direct_light(&self, light: &LightSource, found: &mut HashMap<usize, LightSource>){
+    /// Collect all times that a light hits a portal in its region.
+    fn trace_portal_light(&self, light: &LightSource, found: &mut HashMap<usize, LightSource>){
         assert_eq!(self.id, light.region);
-        // For every portal, cast a ray from the light to every point on the portal. The first time one hits, we care.
         for wall in self.walls() {
-            let line = wall.line;
-            let normal = wall.normal;
+            let line = wall.line();
+            let normal = wall.normal();
             match wall.portal() {
                 // If it's not a portal, we ignore it.
                 None => {}
                 Some(portal) => {
-                    let segments = self.find_shortest_path(light.pos,normal, line);
-                    match segments {
-                        // If the light doesn't hit it, we ignore it.
-                        None => {}
-                        Some(path) => {
+                    // Check a bunch of points on the wall.
+                    let sample_count = (wall.line().length() / Region::PORTAL_SAMPLE_LENGTH).floor();
+                    for i in 0..(sample_count as i32) {
+                        let t = i as f64 / sample_count;
+                        let wall_point = wall.line().at_t(t);
+                        let dir_to_light = light.pos.subtract(&wall_point);
+
+                        // If it hit the back, it didnt go through the portal
+                        let hits_front = dir_to_light.dot(&wall.normal()) > EPSILON;
+                        if !hits_front {
+                            continue;
+                        }
+
+                        if !light.blocked_by_shadow(self, &wall_point) {
+                            // if there's a clear path, add it as a portal light in the next region
+                            let offset = wall.line().middle().subtract(&light.pos);
+                            let offset = portal.rotate(offset);
+                            let new_pos = portal.to_wall_line().middle().subtract(&offset);
+
                             let portal_light = LightSource {
                                 id: maze::rand(),
                                 region: portal.to_region,
                                 intensity: light.intensity,
-                                pos: path.line.get_b(),
-                                kind: LightKind::PORTAL {
-                                    line: portal.transform.to_line
+                                pos: new_pos,
+                                kind: PORTAL {
+                                    portal_line: portal.to_wall_line()
                                 },
                             };
                             found.insert(maze::rand(), portal_light);
+                            break;
                         }
                     }
                 }

@@ -2,22 +2,31 @@ use std::f64::consts::PI;
 use std::sync::RwLock;
 
 use sdl2::keyboard::Keycode;
+use sdl2::mouse::MouseButton;
+use maze::rand;
 use crate::entity::{SquareEntity};
-use crate::material::Material;
+use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
-use crate::world::{Wall, World};
+use crate::ray::RaySegment;
+use crate::world::{Portal, Wall, World};
 
 
 const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
 const PLAYER_SIZE: f64 = 4.0;
 
+#[derive(Copy, Clone)]
+pub(crate) struct WallRef {
+    region: usize,
+    wall: usize
+}
+
 pub(crate) struct Player {
     pub(crate) entity: SquareEntity,
     pub(crate) look_direction: Vector2,
     pub(crate) move_direction: Vector2,
     pub(crate) has_flash_light: bool,
-    pub(crate) portals: [Option<Wall>; 2],
+    pub(crate) portals: [Option<WallRef>; 2],
     pub(crate) needs_render_update: RwLock<bool>,
     pub(crate) first_person_rendering: bool
 }
@@ -148,5 +157,94 @@ impl Player {
         }
 
         needs_physics_update
+    }
+
+    pub(crate) fn mouse_click(world: &mut World, mouse_button: MouseButton) {
+        let direction = world.player().look_direction;
+        let hit: RaySegment = {
+            let segments = world.ray_trace(world.player.entity.region, world.player().entity.pos, direction);
+            segments.last().unwrap().clone()
+        };
+
+        match hit.hit_wall {
+            None => {}
+            Some(hit_wall_index) => {
+                let new_portal = {
+                    let hit_wall = world.get_region(hit.region).get_wall(hit_wall_index);
+                    let half_portal_direction = hit_wall.line.direction().normalize().scale(10.0);
+                    let normal = if direction.dot(&hit_wall.normal) < 0.0 {
+                        hit_wall.normal
+                    } else {
+                        hit_wall.normal.negate()
+                    };
+                    let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(10.0));
+                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(10.0));
+
+                    let wall = Wall {
+                        id: rand(),
+                        region: hit.region,
+                        line: LineSegment2::of(start_point, end_point),
+                        normal,
+                        material: Material::default(Colour::new(0.8, 0.3, 0.3)),
+                        portal: None,
+                    };
+
+                    wall
+                };
+
+
+                match mouse_button {
+                    MouseButton::Left => {
+                        Player::place_portal(world, new_portal, 0, 1);
+                    }
+                    MouseButton::Right => {
+                        Player::place_portal(world, new_portal, 1, 0);
+                    }
+                    MouseButton::Middle => {
+                        Player::clear_portal(world, 0);
+                        Player::clear_portal(world, 1);
+                    }
+                    _ => { return; }
+                }
+            }
+        }
+
+        *(world.player_mut().needs_render_update.write().unwrap()) = true;
+    }
+
+    pub(crate) fn clear_portal(world: &mut World, portal_index: usize) {
+        let portal = world.player().portals[portal_index];
+        match portal {
+            None => {},
+            Some(portal) => {
+                world.regions[portal.region].walls.remove(&portal.wall);
+            }
+        }
+
+    }
+
+    pub(crate) fn place_portal(mut world: &mut World, mut portal: Wall, replacing_index: usize, connecting_index: usize) {
+        // If the player already had a portal placed in this slot, remove it.
+       Player::clear_portal(world, replacing_index);
+
+        // Put the new portal in the player's slot.
+        world.player_mut().portals[replacing_index] = Some(WallRef {
+            region: portal.region,
+            wall: portal.id,
+        });
+
+        // If there's a portal in the other slot, connect them.
+        let connecting_portal = world.player().portals[connecting_index];
+        match &connecting_portal {
+            None => {}
+            Some(connecting_portal) => {
+                let other_portal = world.regions[connecting_portal.region].walls.get_mut(&connecting_portal.wall).unwrap();
+                portal.portal = Portal::new(&portal, other_portal);
+                other_portal.portal = Portal::new(other_portal, &portal);
+            }
+        }
+
+        // Add the new portal to the world.
+        world.regions[portal.region].walls.insert(portal.id, portal);
     }
 }

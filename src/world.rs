@@ -47,7 +47,7 @@ pub(crate) struct LightSource {
 #[derive(Clone, Copy)]
 pub(crate) enum LightKind {
     DIRECT(),
-    PORTAL { line: LineSegment2 }
+    PORTAL { portal_line: LineSegment2 }
 }
 
 impl Wall {
@@ -131,10 +131,10 @@ impl Portal {
             from_region: from_wall.region,
             from_wall: from_wall.id,
             transform: Transformation {
-                to_line: to_wall.line,
-                to_normal: to_wall.normal,
-                from_line: from_wall.line,
-                from_normal: from_wall.normal,
+                to_line: to_wall.line(),
+                to_normal: to_wall.normal(),
+                from_line: from_wall.line(),
+                from_normal: from_wall.normal(),
             }
         })
     }
@@ -149,8 +149,8 @@ impl Portal {
         let last_offset = pos.subtract(&self.transform.from_line.a);
         let fraction = last_offset.length() / self.transform.from_line.direction().length();
         let new_offset = self.transform.to_line.direction().negate().scale(fraction);
-
         self.transform.to_line.a.add(&new_offset)
+
     }
 
     // TODO: should try scaling the direction as well,
@@ -166,5 +166,8 @@ impl Portal {
         }
     }
 
+    pub(crate) fn to_wall_line(&self) -> LineSegment2 {
+        self.transform.to_line
+    }
 }
 

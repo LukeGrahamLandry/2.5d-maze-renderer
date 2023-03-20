@@ -40,22 +40,21 @@ fn inner_render2d(world: & World , canvas: &mut RenderBuffer, _delta_time: f64){
 
     // Draw the regions.
     for region in world.regions() {
-        // Draw direct lights
+        // Draw lights
         for light in region.lights() {
             match &light.kind {
                 LightKind::DIRECT() => {
-                    let hit_colour = light.intensity.scale(0.3);
-                    let miss_colour = light.intensity.scale(0.1);
+                    let colour = light.intensity.scale(0.3);
                     for r in 0..LIGHT_RAY_COUNT_2D {
                         // Draw rays
                         let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
                         let ray_start = light.pos.add(&direction.scale(3.0));
                         let segment = region.single_ray_trace(ray_start, direction);
 
-                        draw_ray_segment_2d(canvas, &segment, hit_colour, miss_colour);
+                        draw_ray_segment_2d(canvas, &segment, colour, colour);
                     }
                 }
-                LightKind::PORTAL { line } => {
+                LightKind::PORTAL { portal_line: line } => {
                     draw_portal_light_2d(region, canvas, light, line);
                 }
             }

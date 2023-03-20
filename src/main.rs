@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use crate::player::Player;
 use crate::world_gen::{example_preset, random_maze_world};
 
 mod player;
@@ -59,6 +60,8 @@ pub fn run() -> Result<(), String> {
     let mut idle_frame_counter = 0;
     let mut pause_seconds_counter = 0.0;
     let mut total_delay_ms = 0u64;
+
+    println!("Starting game loop.");
     'mainloop: loop {
         let mut delta_mouse = 0;
         for event in events.poll_iter() {
@@ -86,7 +89,7 @@ pub fn run() -> Result<(), String> {
                 },
 
                 Event::MouseButtonDown { mouse_btn, .. } => {
-                    // world.on_mouse_click(mouse_btn);
+                    Player::mouse_click(&mut world, mouse_btn);
                 },
 
                 Event::MouseMotion { xrel, .. } => {

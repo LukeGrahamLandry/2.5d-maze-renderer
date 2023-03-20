@@ -8,7 +8,7 @@ impl LightSource {
             LightKind::DIRECT() => {
                 region.trace_clear_path_no_portals_between(self.pos, *hit_pos).is_none()
             }
-            LightKind::PORTAL { line } => {
+            LightKind::PORTAL { portal_line: line } => {
                 region.trace_clear_portal_light(self, &line, *hit_pos).is_none()
             }
         }
@@ -34,8 +34,8 @@ impl World {
                     match hit_wall.portal() {
                         None => { break; }
                         Some(portal)  => {
-                            let t = hit_wall.line.t_of(&segment.line.b).abs();
-                            let hit_back = hit_wall.normal.dot(&direction) > 0.0;
+                            let t = hit_wall.line().t_of(&segment.line.b).abs();
+                            let hit_back = hit_wall.normal().dot(&direction) > 0.0;
                             let hit_edge = t < 0.01 || t > 0.99;
                             if hit_back || hit_edge {
                                 break;
@@ -78,7 +78,7 @@ impl Region {
         let direction = direction.normalize();
         let last_hit = self.single_ray_trace(origin, direction);
         let found_length_sq = last_hit.line.direction().length_sq();
-        if (found_length_sq - expected_length_sq) > -mth::EPSILON {
+        if found_length_sq > (expected_length_sq - mth::EPSILON) {
             Some(last_hit)
         } else {
             None
@@ -103,7 +103,7 @@ impl Region {
 
         let ray = LineSegment2::from(ray_hit_portal_pos.add(&direction.tiny()), direction.scale(1.0 - (5.0 * EPSILON)));
         for wall in self.walls() {
-            let hit = wall.line.intersection(&ray);
+            let hit = wall.line().intersection(&ray);
             if !hit.is_nan() {
                 return None;
             }
@@ -122,7 +122,7 @@ impl Region {
         let mut hit_wall = None;
 
         for wall in self.walls() {
-            let hit = wall.line.intersection(&ray);
+            let hit = wall.line().intersection(&ray);
             let to_hit = origin.subtract(&hit);
 
             if !hit.is_nan() && to_hit.length_sq() < shortest_hit_distance_squared {
@@ -145,8 +145,8 @@ impl Region {
     }
 
 
-    /// How many rays to cast when deciding if a light hits a portal
-    const PORTAL_SAMPLE_LENGTH: f64 = 1.0 / 5.0;
+    /// For deciding if a light hits a portal
+    pub(crate) const PORTAL_SAMPLE_LENGTH: f64 = 1.0;
 
     /// Find the shortest clear path, without following portals, from a point to a wall.
     /// Returns None if there is no clear path.
@@ -157,8 +157,8 @@ impl Region {
         for i in 0..(sample_count as i32) {
             let t = i as f64 / sample_count;
             let wall_point = wall.at_t(t);
-            let segments = self.trace_clear_path_no_portals_between(pos, wall_point);
-            match segments {
+            let segment = self.trace_clear_path_no_portals_between(pos, wall_point);
+            match segment {
                 None => {}
                 Some(path) => {
                     let hits_front = path.line.direction().dot(&wall_normal) > EPSILON;
