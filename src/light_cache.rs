@@ -3,11 +3,12 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::hash::Hasher;
 use std::ops::Index;
-use std::sync::atomic::AtomicI8;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::AtomicI8;
+use std::time::Instant;
 
-use crate::{mth::{Vector2}, world::World};
-use crate::material::{Colour};
+use crate::{mth::Vector2, world::World};
+use crate::material::Colour;
 use crate::mth::{EPSILON, LineSegment2};
 use crate::ray::RaySegment;
 use crate::world::{FloorLightCache, LightKind, LightSource, Portal, Region, Wall};
@@ -109,18 +110,20 @@ impl Region {
         }
     }
 
-    pub(crate) fn new_light_cache(min: Vector2, max: Vector2) -> Arc<FloorLightCache> {
+    pub(crate) fn new_light_cache(min: Vector2, max: Vector2) -> FloorLightCache {
         let min = min.subtract(&Vector2::of(1.0, 1.0));
         let max = max.add(&Vector2::of(1.0, 1.0));
         let width = (max.x - min.x).abs().ceil() as usize;
         let height = (max.y - min.y).abs().ceil() as usize;
 
-        Arc::new(FloorLightCache {
+        let cache = Region::empty_light_cache(width * height);
+        FloorLightCache {
             width,
             height,
-            floor_light_cache: Region::empty_light_cache(width * height),
+            floor_light_cache: cache.clone(),
+            empty_floor_light_cache: cache,
             top_left: min,
-        })
+        }
     }
 
     fn empty_light_cache(count: usize) -> Box<[Cell<Option<Colour>>]> {
@@ -157,14 +160,10 @@ impl Region {
         }
     }
 
-    pub(crate) fn clear_floor_lighting_cache(&self){
-        let lighting = self.lighting.clone();
-
-        thread::spawn(move || {
-            lighting.floor_light_cache.iter().for_each(|cache| {
-                cache.set(None);
-            });
-        });
+    pub(crate) fn clear_floor_lighting_cache(&mut self){
+        let n = Instant::now();
+        self.lighting.floor_light_cache.clone_from_slice(self.lighting.empty_floor_light_cache.as_ref());
+        println!("reset lights in {} ms", (Instant::now() - n).as_millis());
     }
 }
 

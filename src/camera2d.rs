@@ -11,28 +11,15 @@ use crate::ray::{RaySegment};
 
 pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f64){
     let player_offset = world.player().entity.pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
-    let (sender, receiver) = mpsc::channel();
 
-    thread::scope(|s| {
-        {
-            let sender = sender;
-            s.spawn(move || {
-                let sender = sender.clone();
-                let mut handler = |line| {
-                    sender.send(line).expect("Failed to send line.");
-                };
+    let mut handler = |line: ColouredLine| {
+        window.set_draw_color(line.colour.to_u8());
+        window.draw_line(line.a.sdl(), line.b.sdl()).expect("SDL draw failed.");
+    };
 
-                let mut canvas = RenderBuffer::new(&mut handler);
-                canvas.offset = player_offset.negate();
-                inner_render2d(world, &mut canvas, _delta_time);
-            });
-        }
-
-        for line in receiver {
-            window.set_draw_color(line.colour.to_u8());
-            window.draw_line(line.a.sdl(), line.b.sdl()).expect("SDL draw failed.");
-        }
-    });
+    let mut canvas = RenderBuffer::new(&mut handler);
+    canvas.offset = player_offset.negate();
+    inner_render2d(world, &mut canvas, _delta_time);
 }
 
 fn inner_render2d(world: & World , canvas: &mut RenderBuffer, _delta_time: f64){

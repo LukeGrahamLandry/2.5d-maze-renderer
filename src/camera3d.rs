@@ -8,46 +8,24 @@ use std::thread;
 use crate::world::{Region, World};
 
 pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f64) {
-    let (sender, receiver) = mpsc::channel();
+    let line_chunk_size = 500;
+    let mut lines = Vec::with_capacity(line_chunk_size);
 
-    let thread_count = 3 as usize;
-    thread::scope(|s| {
-        {
-            let sender = sender;
-            for i in 0..thread_count {
-                let sender = sender.clone();
-                s.spawn(move || {
-                    let mut line_chunk_size = 500;
-                    let mut lines = Vec::with_capacity(line_chunk_size);
+    for x in 0..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) as usize {
+        let mut handler = |line| {
+            lines.push(line);
+        };
 
-                    for x in (i..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) as usize).step_by(thread_count) {
-                        let mut handler = |line| {
-                            lines.push(line);
-                        };
+        let mut canvas = RenderBuffer::new(&mut handler);
+        render_column(world, &mut canvas, x);
 
-                        let mut canvas = RenderBuffer::new(&mut handler);
-                        render_column(world, &mut canvas, x);
-
-                        let size = lines.len();
-                        if size > line_chunk_size {
-                            sender.send(lines).expect("Failed to send lines.");
-                            lines = Vec::with_capacity(size);
-                        }
-                    }
-
-                    sender.send(lines).expect("Failed to send lines.");
-                });
-            }
-        }
-
-        // most lines are really short. from the floor. this is dumb.
-        // lights should memoize the colour value at a certain radius on a given frame.
-        // do the sampling in world space and draw fixed lengths lerping between them.
-
-        for lines in receiver {
+        let size = lines.len();
+        if size > line_chunk_size {
             draw_lines(window, lines);
+            lines = Vec::with_capacity(size);
         }
-    });
+    }
+    draw_lines(window, lines);
 }
 
 fn render_column(world: &World , canvas: &mut RenderBuffer, raw_screen_x: usize) {

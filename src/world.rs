@@ -17,11 +17,12 @@ pub(crate) struct Region {
     pub(crate) walls: HashMap<usize, Wall>,
     pub(crate) lights: HashMap<usize, LightSource>,
     pub(crate) floor_material: Material,
-    pub(crate) lighting: Arc<FloorLightCache>
+    pub(crate) lighting: FloorLightCache
 }
 
 pub(crate) struct FloorLightCache {
     pub(crate) floor_light_cache: Box<[Cell<Option<Colour>>]>,
+    pub(crate) empty_floor_light_cache: Box<[Cell<Option<Colour>>]>,
     pub(crate) width: usize,
     pub(crate) height: usize,
     pub(crate) top_left: Vector2
