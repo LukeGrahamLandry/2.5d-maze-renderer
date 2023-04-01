@@ -5,15 +5,10 @@ pub mod solve;
 pub use grid::{Grid, Cell, Pos};
 
 pub fn rand() -> usize {
-    fastrand::usize(usize::MIN..usize::MAX)
+    rand_below(usize::MAX)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-
-    }
+pub fn rand_below(max: usize) -> usize {
+    use rand::Rng;
+    rand::thread_rng().gen_range(usize::MIN..max)
 }

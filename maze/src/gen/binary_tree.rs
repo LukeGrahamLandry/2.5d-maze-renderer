@@ -1,4 +1,5 @@
 use crate::grid::{Grid, Pos};
+use crate::rand_below;
 
 /// For each cell, randomly choose either north or east to connect.
 /// Be careful not to go out of bounds on the north and east edges.
@@ -22,7 +23,7 @@ pub fn on(grid: &mut Grid) {
                 continue;
             }
 
-            let other = near[fastrand::usize(0..near.len())];
+            let other = near[rand_below(near.len())];
             grid.mut_cell(pos).links.push(other);
             grid.mut_cell(other).links.push(pos);
             near.clear();

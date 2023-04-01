@@ -1,5 +1,3 @@
-use std::arch::aarch64::float64x1_t;
-use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::sync::RwLock;
 
