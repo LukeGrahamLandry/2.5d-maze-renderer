@@ -3,6 +3,7 @@ extern crate core;
 
 use std::ffi::{c_int, c_void};
 use std::thread;
+use crate::game::GameState;
 
 mod player;
 mod camera3d;
@@ -18,8 +19,6 @@ mod lighting;
 mod entity;
 mod game;
 
-
-
 fn main() -> Result<(), String> {
     run()?;
 
@@ -28,12 +27,23 @@ fn main() -> Result<(), String> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn run() -> Result<(), String> {
+    let mut game = GameState::new()?;
+    println!("Starting game loop.");
+    loop {
+        if game.tick() {
+            break;
+        }
+    }
     Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
 fn run() -> Result<(), String> {
-    setup_mainloop(-1, 1, move || {});
+    let mut game = GameState::new()?;
+    println!("Starting game loop.");
+    setup_mainloop(-1, 1, move || {
+        game.tick();
+    });
     Ok(())
 }
 
