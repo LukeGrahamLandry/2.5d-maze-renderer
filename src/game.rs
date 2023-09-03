@@ -8,7 +8,7 @@ use sdl2::render::WindowCanvas;
 use crate::camera;
 use crate::player::Player;
 use crate::world::World;
-use crate::world_gen::{example_preset, random_maze_world};
+use crate::world_gen::{random_maze_world};
 
 // TODO: calculate dynamically based on target FPS
 const FRAME_DELAY_MS: u64 = 0;
@@ -47,30 +47,22 @@ impl GameState {
             .build()
             .map_err(|e| e.to_string())?;
 
-        let mut world = random_maze_world();
+        let world = random_maze_world();
 
         canvas.clear();
         canvas.present();
 
-        let mut events = sdl_context.event_pump()?;
-
-        let mut start = Instant::now();
-
-        let mut seconds_counter = 0.0;
-        let mut render_frame_counter = 0;
-        let mut idle_frame_counter = 0;
-        let mut pause_seconds_counter = 0.0;
-        let mut total_delay_ms = 0u64;
+        let events = sdl_context.event_pump()?;
 
         Ok(GameState {
             events,
             world,
-            start,
-            seconds_counter,
-            render_frame_counter,
-            idle_frame_counter,
-            pause_seconds_counter,
-            total_delay_ms,
+            start: Instant::now(),
+            seconds_counter: 0.0,
+            render_frame_counter: 0,
+            idle_frame_counter: 0,
+            pause_seconds_counter: 0.0,
+            total_delay_ms: 0,
             canvas
         })
     }
@@ -113,19 +105,15 @@ impl GameState {
         }
 
         let keys = self.events.keyboard_state();
-        let keys: Vec<Keycode> = keys.pressed_scancodes().filter_map(Keycode::from_scancode).collect();
         let duration = self.start.elapsed().as_secs_f64();
 
         self.seconds_counter += duration;
 
         if self.seconds_counter > 5.0 {
-            let ms_counter = self.seconds_counter * 1000.0;
-            let frame_time = (ms_counter / ((self.render_frame_counter + self.idle_frame_counter) as f64)).round() as u64;
-            let fps = ((self.render_frame_counter + self.idle_frame_counter) as f64 / self.seconds_counter).round();
-            // TODO: count render time seperatly so i can only count fps while it was actually rendering
-            let sleep_percent = ((self.total_delay_ms as f64) / ms_counter * 100.0).round();
-            let pause_percent = (self.pause_seconds_counter / self.seconds_counter * 100.0).round();
-            println!("{} seconds; rendered {} frames; idle {} frames; {} fps; {} ms per frame (sleeping {}%, idle {}%)", self.seconds_counter.round(), self.render_frame_counter, self.idle_frame_counter, fps, frame_time, sleep_percent, pause_percent);
+            let render_seconds = self.seconds_counter - self.pause_seconds_counter;
+            let frame_time = (render_seconds / (self.render_frame_counter as f64) * 1000.0).round() as u64;
+            let fps = (self.render_frame_counter as f64 / render_seconds).round();
+            println!("{} seconds; rendered {} frames; {} fps; {} ms per frame", self.seconds_counter.round(), self.render_frame_counter, fps, frame_time);
             self.seconds_counter = 0.0;
             self.render_frame_counter = 0;
             self.pause_seconds_counter = 0.0;
@@ -151,7 +139,7 @@ impl GameState {
         };
 
         if sleep_time > 0 {
-            // thread::sleep(std::time::Duration::from_millis(sleep_time));
+            thread::sleep(std::time::Duration::from_millis(sleep_time));
             self.total_delay_ms += sleep_time;
         }
 

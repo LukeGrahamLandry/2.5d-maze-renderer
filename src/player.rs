@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 use std::sync::RwLock;
 
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{KeyboardState, Keycode, Scancode};
 use sdl2::mouse::MouseButton;
 use maze::rand;
 use crate::entity::{SquareEntity};
@@ -52,7 +52,7 @@ impl Player {
         }
     }
 
-    pub(crate) fn update(world: &mut World, pressed: &Vec<Keycode>, delta_time: f64, delta_mouse: i32) -> bool {
+    pub(crate) fn update(world: &mut World, pressed: &KeyboardState, delta_time: f64, delta_mouse: i32) -> bool {
         let moved = {
             world.player_mut().update_direction(pressed, delta_mouse)
         };
@@ -129,28 +129,23 @@ impl Player {
         }
     }
 
-    fn update_direction(&mut self, pressed: &Vec<Keycode>, delta_mouse: i32) -> bool {
+    fn update_direction(&mut self, pressed: &KeyboardState, delta_mouse: i32) -> bool {
         let mut relative_move_direction = Vector2::zero();
         self.has_flash_light = false;
-        for key in pressed {
-            match key {
-                Keycode::W => {
-                    relative_move_direction.y = 1.0;
-                }
-                Keycode::S => {
-                    relative_move_direction.y = -1.0;
-                }
-                Keycode::A => {
-                    relative_move_direction.x = 1.0;
-                }
-                Keycode::D => {
-                    relative_move_direction.x = -1.0;
-                },
-                Keycode::F => {
-                    self.has_flash_light = true;
-                }
-                _ => (),
-            }
+        if pressed.is_scancode_pressed(Scancode::W) {
+            relative_move_direction.y = 1.0;
+        }
+        if pressed.is_scancode_pressed(Scancode::S) {
+            relative_move_direction.y = -1.0;
+        }
+        if pressed.is_scancode_pressed(Scancode::A) {
+            relative_move_direction.x = 1.0;
+        }
+        if pressed.is_scancode_pressed(Scancode::D) {
+            relative_move_direction.x = -1.0;
+        }
+        if pressed.is_scancode_pressed(Scancode::F) {
+            self.has_flash_light = true;
         }
 
         let move_angle = relative_move_direction.normalize().angle() - (PI / 2.0);

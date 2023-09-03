@@ -1,6 +1,4 @@
 use std::f64::consts::PI;
-use std::sync::{mpsc};
-use std::{thread};
 use sdl2::render::WindowCanvas;
 use crate::camera::*;
 use crate::material::{Colour};
@@ -22,7 +20,7 @@ pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f6
     inner_render2d(world, &mut canvas, _delta_time);
 }
 
-fn inner_render2d(world: & World , canvas: &mut RenderBuffer, _delta_time: f64){
+fn inner_render2d<R: RenderStrategy>(world: & World, canvas: &mut R, _delta_time: f64){
     let half_player_size = 5;
 
     // Draw the regions.
@@ -83,7 +81,7 @@ fn inner_render2d(world: & World , canvas: &mut RenderBuffer, _delta_time: f64){
     canvas.draw_between(world.player().entity.pos, end);
 }
 
-fn draw_portal_light_2d(region: &Region, canvas: &mut RenderBuffer, light: &LightSource, portal_line: &LineSegment2) {
+fn draw_portal_light_2d<R: RenderStrategy>(region: &Region, canvas: &mut R, light: &LightSource, portal_line: &LineSegment2) {
     canvas.set_draw_color(light.intensity.scale(0.2));
     for r in 0..LIGHT_RAY_COUNT_2D {
         let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
@@ -110,9 +108,7 @@ fn draw_portal_light_2d(region: &Region, canvas: &mut RenderBuffer, light: &Ligh
     canvas.draw_between(portal_line.middle(), light.pos);
 }
 
-
-
-fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: bool) {
+fn draw_wall_2d<R: RenderStrategy>(canvas: &mut R, wall: &Wall, contains_the_player: bool) {
     let color = if contains_the_player {
         match wall.portal() {
             Some { .. } => { Colour::rgb(0, 255, 255) },
@@ -133,7 +129,7 @@ fn draw_wall_2d(canvas: &mut RenderBuffer, wall: &Wall, contains_the_player: boo
     canvas.draw_between(wall.line().middle(), wall.line().middle().add(&wall.normal().scale(5.0)));
 }
 
-fn draw_ray_segment_2d(canvas: &mut RenderBuffer, segment: &RaySegment, hit_colour: Colour, miss_colour: Colour) {
+fn draw_ray_segment_2d<R: RenderStrategy>(canvas: &mut R, segment: &RaySegment, hit_colour: Colour, miss_colour: Colour) {
     match segment.hit_wall {
         None => {
             canvas.set_draw_color(miss_colour);

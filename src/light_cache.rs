@@ -1,23 +1,17 @@
-use std::{collections::HashSet, hash::Hash, thread};
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::hash::Hasher;
-use std::ops::Index;
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::AtomicI8;
 use std::time::Instant;
 
 use crate::{mth::Vector2, world::World};
 use crate::material::Colour;
-use crate::mth::{EPSILON, LineSegment2};
-use crate::ray::RaySegment;
-use crate::world::{FloorLightCache, LightKind, LightSource, Portal, Region, Wall};
+use crate::mth::{EPSILON};
+use crate::world::{FloorLightCache, LightKind, LightSource, Region};
 use crate::world::LightKind::PORTAL;
 
 impl World {
     pub(crate) fn init_lighting(&mut self){
         let portal_hits = self.collect_portal_lights();
-        for (id, portal_light) in portal_hits.into_iter() {
+        for (_, portal_light) in portal_hits.into_iter() {
             self.add_portal_light(portal_light);
         }
     }
@@ -166,10 +160,3 @@ impl Region {
         println!("reset lights in {} ms", (Instant::now() - n).as_millis());
     }
 }
-
-// The Cells are the problem but I don't care about races on set calls.
-// sets from horizontal_surface_colour_memoized will always be based on the current correct lighting (multiple will be the same).
-// If that races with clear_floor_lighting_cache either it will end up None and just be recomputed next frame,
-// or it will get the value instead of None but the value will be based on the new lighting anyway
-// so its just done a frame early.
-unsafe impl Sync for FloorLightCache {}

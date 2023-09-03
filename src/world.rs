@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{KeyboardState, Keycode};
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
@@ -94,7 +94,7 @@ impl World {
         world
     }
 
-    pub(crate) fn update(&mut self, delta_time: f64, pressed: &Vec<Keycode>, delta_mouse: i32){
+    pub(crate) fn update(&mut self, delta_time: f64, pressed: &KeyboardState, delta_mouse: i32){
         Player::update(self, &pressed, delta_time, delta_mouse);
     }
 

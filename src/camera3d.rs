@@ -7,28 +7,13 @@ use std::sync::mpsc;
 use std::thread;
 use crate::world::{Region, World};
 
-pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f64) {
-    let line_chunk_size = 500;
-    let mut lines = Vec::with_capacity(line_chunk_size);
-
+pub(crate) fn render(world: &World , window: &mut WindowCanvas, _delta_time: f64) {
     for x in 0..((SCREEN_WIDTH as f64 * RESOLUTION_FACTOR) as i32) as usize {
-        let mut handler = |line| {
-            lines.push(line);
-        };
-
-        let mut canvas = RenderBuffer::new(&mut handler);
-        render_column(world, &mut canvas, x);
-
-        let size = lines.len();
-        if size > line_chunk_size {
-            draw_lines(window, lines);
-            lines = Vec::with_capacity(size);
-        }
+        render_column(world, window, x);
     }
-    draw_lines(window, lines);
 }
 
-fn render_column(world: &World , canvas: &mut RenderBuffer, raw_screen_x: usize) {
+fn render_column<R: RenderStrategy>(world: &World , canvas: &mut R, raw_screen_x: usize) {
     // Adjust to what the x would be if the resolution factor was 1.
     // This makes lower resolutions have gaps instead of being squished on one side of the screen.
     let x = (raw_screen_x as f64 / RESOLUTION_FACTOR) as i32;
@@ -58,8 +43,8 @@ fn render_column(world: &World , canvas: &mut RenderBuffer, raw_screen_x: usize)
     );
 }
 
-fn draw_floor_segment(
-    canvas: &mut RenderBuffer,
+fn draw_floor_segment<R: RenderStrategy>(
+    canvas: &mut R,
     region: &Region,
     segment: &RaySegment,
     screen_x: i32,
@@ -104,7 +89,7 @@ fn draw_floor_segment(
 
 
 
-fn draw_wall_3d(canvas: &mut RenderBuffer, region: &Region, hit: &RaySegment, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
+fn draw_wall_3d<R: RenderStrategy>(canvas: &mut R, region: &Region, hit: &RaySegment, ray_direction: Vector2, cumulative_dist: f64, screen_x: i32) {
     assert_eq!(region.id, hit.region);
     match hit.hit_wall {
         None => {}

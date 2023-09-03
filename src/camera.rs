@@ -64,20 +64,37 @@ pub(crate) struct RenderBuffer<'a> {
     sender: &'a mut dyn FnMut(ColouredLine),
 }
 
-impl<'a> RenderBuffer<'a> {
-    pub(crate) fn new(sender: &mut dyn FnMut(ColouredLine)) -> RenderBuffer {
-        RenderBuffer {
-            sender,
-            current_colour: Colour::black(),
-            offset: Vector2::zero(),
-        }
+pub(crate) trait RenderStrategy {
+    fn set_draw_color(&mut self, colour: Colour);
+    fn draw_between(&mut self, start: Vector2, end: Vector2);
+    fn draw_line(&mut self, line: LineSegment2);
+}
+
+impl RenderStrategy for WindowCanvas {
+    fn set_draw_color(&mut self, colour: Colour) {
+        self.set_draw_color(colour.to_u8());
     }
 
-    pub(crate) fn set_draw_color(&mut self, colour: Colour) {
+    fn draw_between(&mut self, start: Vector2, end: Vector2) {
+        self
+            .draw_line(start.sdl(), end.sdl())
+            .expect("SDL draw failed.");
+    }
+
+    fn draw_line(&mut self, line: LineSegment2) {
+        self
+            .draw_line(line.a.sdl(), line.b.sdl())
+            .expect("SDL draw failed.");
+    }
+}
+
+
+impl<'a> RenderStrategy for RenderBuffer<'a> {
+    fn set_draw_color(&mut self, colour: Colour) {
         self.current_colour = colour;
     }
 
-    pub(crate) fn draw_between(&mut self, start: Vector2, end: Vector2) {
+    fn draw_between(&mut self, start: Vector2, end: Vector2) {
         let (a, b) = if self.offset.is_zero() {
             (start, end)
         } else {
@@ -90,8 +107,18 @@ impl<'a> RenderBuffer<'a> {
         });
     }
 
-    pub(crate) fn draw_line(&mut self, line: LineSegment2) {
+    fn draw_line(&mut self, line: LineSegment2) {
         self.draw_between(line.a, line.b);
+    }
+}
+
+impl<'a> RenderBuffer<'a> {
+    pub(crate) fn new(sender: &mut dyn FnMut(ColouredLine)) -> RenderBuffer {
+        RenderBuffer {
+            sender,
+            current_colour: Colour::black(),
+            offset: Vector2::zero(),
+        }
     }
 }
 
