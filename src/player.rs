@@ -1,16 +1,15 @@
 use std::f64::consts::PI;
 use std::sync::RwLock;
+use winit::event::MouseButton;
 
-use sdl2::keyboard::{KeyboardState, Keycode, Scancode};
-use sdl2::mouse::MouseButton;
-use maze::rand;
-use crate::entity::{SquareEntity};
+use crate::entity::SquareEntity;
+use crate::game::Keys;
 use crate::material::{Colour, Material};
 use crate::mth;
 use crate::mth::{LineSegment2, Vector2};
 use crate::ray::RaySegment;
 use crate::world::{Portal, Wall, World};
-
+use maze::rand;
 
 const MOVE_SPEED: f64 = 100.0;
 const TURN_SPEED: f64 = 0.002;
@@ -19,7 +18,7 @@ const PLAYER_SIZE: f64 = 4.0;
 #[derive(Copy, Clone)]
 pub(crate) struct WallRef {
     region: usize,
-    wall: usize
+    wall: usize,
 }
 
 pub(crate) struct Player {
@@ -29,7 +28,7 @@ pub(crate) struct Player {
     pub(crate) has_flash_light: bool,
     pub(crate) portals: [Option<WallRef>; 2],
     pub(crate) needs_render_update: RwLock<bool>,
-    pub(crate) first_person_rendering: bool
+    pub(crate) first_person_rendering: bool,
 }
 
 impl Player {
@@ -48,21 +47,24 @@ impl Player {
             has_flash_light: false,
             portals: [None, None],
             needs_render_update: RwLock::new(true),
-            first_person_rendering: false
+            first_person_rendering: true,
         }
     }
 
-    pub(crate) fn update(world: &mut World, pressed: &KeyboardState, delta_time: f64, delta_mouse: i32) -> bool {
-        let moved = {
-            world.player_mut().update_direction(pressed, delta_mouse)
-        };
+    pub(crate) fn update(
+        world: &mut World,
+        pressed: &Keys,
+        delta_time: f64,
+        delta_mouse: i32,
+    ) -> bool {
+        let moved = { world.player_mut().update_direction(pressed, delta_mouse) };
 
         if moved {
             // let bb_ids = world.player().entity.bb_ids;
             // bb_ids.iter().for_each(|w| world.remove_wall(world.player().entity.region, *w));
 
             let dir = world.player_mut().move_direction;
-            let move_direction= Player::handle_collisions(world, dir, 100.0);
+            let move_direction = Player::handle_collisions(world, dir, 100.0);
 
             let player = world.player_mut();
             player.entity.pos.x += move_direction.x * delta_time * MOVE_SPEED;
@@ -76,7 +78,11 @@ impl Player {
         moved
     }
 
-    pub(crate) fn handle_collisions(world: &mut World, mut move_direction: Vector2, max_dist_sq: f64) -> Vector2 {
+    pub(crate) fn handle_collisions(
+        world: &mut World,
+        mut move_direction: Vector2,
+        max_dist_sq: f64,
+    ) -> Vector2 {
         let player = &mut world.player;
         let region = &world.regions[player.entity.region];
 
@@ -103,7 +109,8 @@ impl Player {
                             // TODO: tell the region that the entity switched
                             player.entity.region = portal.to_region;
 
-                            let walking_backwards = wall.normal().dot(&player.look_direction) > mth::EPSILON;
+                            let walking_backwards =
+                                wall.normal().dot(&player.look_direction) > mth::EPSILON;
 
                             player.entity.pos = portal.translate(player.entity.pos);
                             player.look_direction = portal.rotate(player.look_direction);
@@ -121,7 +128,6 @@ impl Player {
             }
         }
 
-
         if move_direction.length() > 0.1 {
             Player::handle_collisions(world, move_direction.scale(0.9), max_dist_sq)
         } else {
@@ -129,22 +135,22 @@ impl Player {
         }
     }
 
-    fn update_direction(&mut self, pressed: &KeyboardState, delta_mouse: i32) -> bool {
+    fn update_direction(&mut self, pressed: &Keys, delta_mouse: i32) -> bool {
         let mut relative_move_direction = Vector2::zero();
         self.has_flash_light = false;
-        if pressed.is_scancode_pressed(Scancode::W) {
+        if pressed.w {
             relative_move_direction.y = 1.0;
         }
-        if pressed.is_scancode_pressed(Scancode::S) {
+        if pressed.s {
             relative_move_direction.y = -1.0;
         }
-        if pressed.is_scancode_pressed(Scancode::A) {
+        if pressed.a {
             relative_move_direction.x = 1.0;
         }
-        if pressed.is_scancode_pressed(Scancode::D) {
+        if pressed.d {
             relative_move_direction.x = -1.0;
         }
-        if pressed.is_scancode_pressed(Scancode::F) {
+        if pressed.f {
             self.has_flash_light = true;
         }
 
@@ -163,7 +169,11 @@ impl Player {
     pub(crate) fn mouse_click(world: &mut World, mouse_button: MouseButton) {
         let direction = world.player().look_direction;
         let hit: RaySegment = {
-            let segments = world.ray_trace(world.player.entity.region, world.player().entity.pos, direction);
+            let segments = world.ray_trace(
+                world.player.entity.region,
+                world.player().entity.pos,
+                direction,
+            );
             segments.last().unwrap().clone()
         };
 
@@ -179,8 +189,16 @@ impl Player {
                         hit_wall.normal.negate()
                     };
                     let bump_dist = 0.1;
-                    let start_point = hit.line.b.add(&half_portal_direction).add(&normal.scale(bump_dist));
-                    let end_point = hit.line.b.subtract(&half_portal_direction).add(&normal.scale(bump_dist));
+                    let start_point = hit
+                        .line
+                        .b
+                        .add(&half_portal_direction)
+                        .add(&normal.scale(bump_dist));
+                    let end_point = hit
+                        .line
+                        .b
+                        .subtract(&half_portal_direction)
+                        .add(&normal.scale(bump_dist));
 
                     let wall = Wall {
                         id: rand(),
@@ -194,7 +212,6 @@ impl Player {
                     wall
                 };
 
-
                 match mouse_button {
                     MouseButton::Left => {
                         Player::place_portal(world, new_portal, 0, 1);
@@ -206,7 +223,9 @@ impl Player {
                         Player::clear_portal(world, 0);
                         Player::clear_portal(world, 1);
                     }
-                    _ => { return; }
+                    _ => {
+                        return;
+                    }
                 }
             }
         }
@@ -218,7 +237,7 @@ impl Player {
     pub(crate) fn clear_portal(world: &mut World, portal_index: usize) {
         let portal = world.player().portals[portal_index];
         match portal {
-            None => {},
+            None => {}
             Some(portal) => {
                 world.regions[portal.region].walls.remove(&portal.wall);
             }
@@ -226,9 +245,14 @@ impl Player {
         world.player_mut().portals[portal_index] = None;
     }
 
-    pub(crate) fn place_portal(mut world: &mut World, mut portal: Wall, replacing_index: usize, connecting_index: usize) {
+    pub(crate) fn place_portal(
+        mut world: &mut World,
+        mut portal: Wall,
+        replacing_index: usize,
+        connecting_index: usize,
+    ) {
         // If the player already had a portal placed in this slot, remove it.
-       Player::clear_portal(world, replacing_index);
+        Player::clear_portal(world, replacing_index);
 
         // Put the new portal in the player's slot.
         world.player_mut().portals[replacing_index] = Some(WallRef {

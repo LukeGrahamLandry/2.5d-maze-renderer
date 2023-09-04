@@ -1,26 +1,21 @@
-use std::f64::consts::PI;
-use sdl2::render::WindowCanvas;
 use crate::camera::*;
-use crate::material::{Colour};
+use crate::material::Colour;
 use crate::mth::{LineSegment2, Vector2};
+use crate::ray::RaySegment;
 use crate::world::{LightKind, LightSource, Region, Wall, World};
-use crate::ray::{RaySegment};
+use std::f64::consts::PI;
 
-
-pub(crate) fn render(world: & World , window: &mut WindowCanvas, _delta_time: f64){
-    let player_offset = world.player().entity.pos.subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
-
-    let mut handler = |line: ColouredLine| {
-        window.set_draw_color(line.colour.to_u8());
-        window.draw_line(line.a.sdl(), line.b.sdl()).expect("SDL draw failed.");
-    };
-
-    let mut canvas = RenderBuffer::new(&mut handler);
-    canvas.offset = player_offset.negate();
-    inner_render2d(world, &mut canvas, _delta_time);
+pub(crate) fn render<R: RenderStrategy>(world: &World, canvas: &mut R) {
+    // let player_offset = world
+    //     .player()
+    //     .entity
+    //     .pos
+    //     .subtract(&Vector2::of((SCREEN_WIDTH / 2) as f64, SCREEN_HEIGHT / 2.0));
+    // canvas.offset = player_offset.negate();
+    inner_render2d(world, canvas);
 }
 
-fn inner_render2d<R: RenderStrategy>(world: & World, canvas: &mut R, _delta_time: f64){
+fn inner_render2d<R: RenderStrategy>(world: &World, canvas: &mut R) {
     let half_player_size = 5;
 
     // Draw the regions.
@@ -32,7 +27,10 @@ fn inner_render2d<R: RenderStrategy>(world: & World, canvas: &mut R, _delta_time
                     let colour = light.intensity.scale(0.3);
                     for r in 0..LIGHT_RAY_COUNT_2D {
                         // Draw rays
-                        let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
+                        let direction = Vector2::from_angle(
+                            r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0),
+                            1.0,
+                        );
                         let ray_start = light.pos.add(&direction.scale(3.0));
                         let segment = region.single_ray_trace(ray_start, direction);
 
@@ -43,7 +41,6 @@ fn inner_render2d<R: RenderStrategy>(world: & World, canvas: &mut R, _delta_time
                     draw_portal_light_2d(region, canvas, light, line);
                 }
             }
-
         }
 
         // Draw walls
@@ -77,11 +74,20 @@ fn inner_render2d<R: RenderStrategy>(world: & World, canvas: &mut R, _delta_time
 
     // Draw look direction.
     canvas.set_draw_color(Colour::rgb(255, 0, 0));
-    let end = world.player().entity.pos.add(&world.player().look_direction.scale(half_player_size as f64));
+    let end = world
+        .player()
+        .entity
+        .pos
+        .add(&world.player().look_direction.scale(half_player_size as f64));
     canvas.draw_between(world.player().entity.pos, end);
 }
 
-fn draw_portal_light_2d<R: RenderStrategy>(region: &Region, canvas: &mut R, light: &LightSource, portal_line: &LineSegment2) {
+fn draw_portal_light_2d<R: RenderStrategy>(
+    region: &Region,
+    canvas: &mut R,
+    light: &LightSource,
+    portal_line: &LineSegment2,
+) {
     canvas.set_draw_color(light.intensity.scale(0.2));
     for r in 0..LIGHT_RAY_COUNT_2D {
         let direction = Vector2::from_angle(r as f64 * PI / (LIGHT_RAY_COUNT_2D as f64 / 2.0), 1.0);
@@ -111,13 +117,13 @@ fn draw_portal_light_2d<R: RenderStrategy>(region: &Region, canvas: &mut R, ligh
 fn draw_wall_2d<R: RenderStrategy>(canvas: &mut R, wall: &Wall, contains_the_player: bool) {
     let color = if contains_the_player {
         match wall.portal() {
-            Some { .. } => { Colour::rgb(0, 255, 255) },
-            None => { Colour::rgb(0, 255, 0) }
+            Some { .. } => Colour::rgb(0, 255, 255),
+            None => Colour::rgb(0, 255, 0),
         }
     } else {
         match wall.portal() {
-            None => { Colour::rgb(0, 0, 255) },
-            Some { .. } => { Colour::rgb(0, 155, 15) }
+            None => Colour::rgb(0, 0, 255),
+            Some { .. } => Colour::rgb(0, 155, 15),
         }
     };
 
@@ -126,14 +132,28 @@ fn draw_wall_2d<R: RenderStrategy>(canvas: &mut R, wall: &Wall, contains_the_pla
 
     // Draw normal
     canvas.set_draw_color(Colour::rgb(200, 0, 200));
-    canvas.draw_between(wall.line().middle(), wall.line().middle().add(&wall.normal().scale(5.0)));
+    canvas.draw_between(
+        wall.line().middle(),
+        wall.line().middle().add(&wall.normal().scale(5.0)),
+    );
 }
 
-fn draw_ray_segment_2d<R: RenderStrategy>(canvas: &mut R, segment: &RaySegment, hit_colour: Colour, miss_colour: Colour) {
+fn draw_ray_segment_2d<R: RenderStrategy>(
+    canvas: &mut R,
+    segment: &RaySegment,
+    hit_colour: Colour,
+    miss_colour: Colour,
+) {
     match segment.hit_wall {
         None => {
             canvas.set_draw_color(miss_colour);
-            canvas.draw_between(segment.line.a, segment.line.a.add(&segment.line.direction().normalize().scale(-100.0)));
+            canvas.draw_between(
+                segment.line.a,
+                segment
+                    .line
+                    .a
+                    .add(&segment.line.direction().normalize().scale(-100.0)),
+            );
         }
         Some(_) => {
             canvas.set_draw_color(hit_colour);

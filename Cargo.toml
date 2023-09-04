@@ -8,6 +8,10 @@ edition = "2021"
 [dependencies]
 maze = { path = "maze", version = "0.1.0" }
 instant = { git = "https://github.com/hoodmane/instant.git", branch = "emscripten-no-leading-underscore" }
+winit = "0.28.6"
+softbuffer = "0.3.0"
 
-[dependencies.sdl2]
-version = "0.35"
+[profile.release]
+lto = true
+panic = "abort"
+strip = true

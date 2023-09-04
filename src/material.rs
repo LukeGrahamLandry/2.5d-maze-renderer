@@ -13,6 +13,10 @@ impl Colour {
         Colour::new(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0)
     }
 
+    pub(crate) fn to_packed(&self) -> u32 {
+        ((self.b * 255.0) as u32) | (((self.g * 255.0) as u32) << 8) | (((self.r * 255.0) as u32) << 16)
+    }
+
     pub(crate) fn black() -> Colour {
         Colour::new(0.0, 0.0, 0.0)
     }

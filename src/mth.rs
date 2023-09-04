@@ -1,12 +1,9 @@
 use std::fmt;
 
-use sdl2::libc::c_int;
-use sdl2::sys::SDL_Point;
-
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Vector2 {
     pub x: f64,
-    pub y: f64
+    pub y: f64,
 }
 
 pub const EPSILON: f64 = 0.000001;
@@ -36,7 +33,6 @@ impl Vector2 {
     pub fn length_sq(&self) -> f64 {
         self.x * self.x + self.y * self.y
     }
-
 
     pub(crate) fn tiny(&self) -> Vector2 {
         self.scale(EPSILON)
@@ -72,7 +68,10 @@ impl Vector2 {
     }
 
     pub(crate) fn from_angle(radians_around_unit_circle: f64, length: f64) -> Vector2 {
-        Vector2::of(radians_around_unit_circle.cos() * length, radians_around_unit_circle.sin() * length)
+        Vector2::of(
+            radians_around_unit_circle.cos() * length,
+            radians_around_unit_circle.sin() * length,
+        )
     }
 
     pub(crate) fn rotate(&self, delta_radians: f64) -> Vector2 {
@@ -114,14 +113,7 @@ impl Vector2 {
     }
 
     pub fn almost_equal(&self, other: &Vector2) -> bool {
-        return almost_equal(self.x,other.x) && almost_equal(self.y, other.y)
-    }
-
-    pub fn sdl(&self) -> SDL_Point {
-        SDL_Point {
-            x: self.x as c_int,
-            y: self.y as c_int,
-        }
+        return almost_equal(self.x, other.x) && almost_equal(self.y, other.y);
     }
 
     pub(crate) fn is_zero(&self) -> bool {
@@ -132,13 +124,16 @@ impl Vector2 {
 #[derive(Debug, Clone, Copy)]
 pub struct LineSegment2 {
     pub(crate) a: Vector2,
-    pub(crate) b: Vector2
+    pub(crate) b: Vector2,
 }
 
 // TODO: be consistent about which is start and which is end. currently it depends where you got the line which is insane.
 impl LineSegment2 {
     pub(crate) fn of(start_point: Vector2, end_point: Vector2) -> LineSegment2 {
-        LineSegment2 {a: start_point, b: end_point}
+        LineSegment2 {
+            a: start_point,
+            b: end_point,
+        }
     }
 
     pub(crate) fn get_a(&self) -> Vector2 {
@@ -152,7 +147,7 @@ impl LineSegment2 {
     pub(crate) fn from(origin: Vector2, direction: Vector2) -> LineSegment2 {
         LineSegment2 {
             b: origin.add(&direction),
-            a: origin
+            a: origin,
         }
     }
 
@@ -193,7 +188,9 @@ impl LineSegment2 {
             LineSegment2 {
                 a: self.a.clone(),
                 b: Vector2::of(self.a.x + 1.0, self.a.y + goal_slope),
-            }.direction().normalize()
+            }
+            .direction()
+            .normalize()
         }
     }
 
@@ -234,8 +231,10 @@ impl LineSegment2 {
     /// Returns true if the point is on the actual line segment (not just the algebraic line).
     /// Correctly returns false for nan points because any comparison against nan is false.
     pub(crate) fn contains(&self, point: &Vector2) -> bool {
-        (self.a.y.min(self.b.y) - point.y) < EPSILON && (point.y - self.a.y.max(self.b.y)) < EPSILON
-            && (self.a.x.min(self.b.x) - point.x) < EPSILON && (point.x - self.a.x.max(self.b.x)) < EPSILON
+        (self.a.y.min(self.b.y) - point.y) < EPSILON
+            && (point.y - self.a.y.max(self.b.y)) < EPSILON
+            && (self.a.x.min(self.b.x) - point.x) < EPSILON
+            && (point.x - self.a.x.max(self.b.x)) < EPSILON
     }
 
     /// Returns NAN if the point is not in the range of both segments.
@@ -271,14 +270,13 @@ impl LineSegment2 {
         let mut a = [-self.slope(), 1.0, self.y_intercept()];
         let mut b = [-other.slope(), 1.0, other.y_intercept()];
 
-        if self.is_vertical(){
+        if self.is_vertical() {
             a = [1.0, 0.0, self.a.x];
         }
 
-        if other.is_vertical(){
+        if other.is_vertical() {
             b = [1.0, 0.0, other.a.x];
         }
-
 
         reduce(&mut a, &mut b);
         Vector2::of(a[2], b[2])
@@ -297,11 +295,10 @@ impl LineSegment2 {
             // Left
             LineSegment2::of(Vector2::of(x2, y1), Vector2::of(x2, y2)),
             // Right
-            LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2))
-        ]
+            LineSegment2::of(Vector2::of(x1, y1), Vector2::of(x1, y2)),
+        ];
     }
 }
-
 
 // insane hand rolled 2x2 row reduction cause i'm just experimenting with what lines are
 // TODO: do it the normal way cause this matters for performance when everything im doing is ray casting
@@ -424,11 +421,11 @@ mod tests {
                 panic!("[{}] Expected {} but got {}.", i, vec, direction);
             }
 
-            if !vec.almost_equal(&rotating_with_angle){
+            if !vec.almost_equal(&rotating_with_angle) {
                 panic!("[{}] Expected {} but got {}.", i, vec, rotating_with_angle);
             }
 
-            if !vec.almost_equal(&rotating_with_vec){
+            if !vec.almost_equal(&rotating_with_vec) {
                 panic!("[{}] Expected {} but got {}.", i, vec, rotating_with_vec);
             }
 
@@ -437,27 +434,30 @@ mod tests {
         }
     }
 
-    fn assert_intersect(a: LineSegment2, b: LineSegment2, x: f64, y: f64){
+    fn assert_intersect(a: LineSegment2, b: LineSegment2, x: f64, y: f64) {
         assert_eq_vec(a.algebraic_intersection(&b), Vector2::of(x, y));
         assert_eq_vec(b.algebraic_intersection(&a), Vector2::of(x, y));
     }
 
-    fn assert_eq_vec(a: Vector2, b: Vector2){
+    fn assert_eq_vec(a: Vector2, b: Vector2) {
         if !a.almost_equal(&b) {
             panic!("{:?} != {:?}", a, b);
         }
     }
 
-    fn assert_linear_system(r1: [f64; 3], r2: [f64; 3], x: f64, y: f64){
+    fn assert_linear_system(r1: [f64; 3], r2: [f64; 3], x: f64, y: f64) {
         let mut r1_result = r1.clone();
         let mut r2_result = r2.clone();
         reduce(&mut r1_result, &mut r2_result);
 
         let x_success = almost_equal(r1_result[2], x) || (r1_result[2].is_nan() && x.is_nan());
-        let y_success = almost_equal(r2_result[2] , y) || (r2_result[2].is_nan() && y.is_nan());
+        let y_success = almost_equal(r2_result[2], y) || (r2_result[2].is_nan() && y.is_nan());
 
         if !x_success || !y_success {
-            panic!("\n{:?} -> {:?} \n{:?} -> {:?} \nExpected ({}, {}) but got ({}, {}).", r1, r1_result, r2, r2_result, x, y, r1_result[2], r2_result[2])
+            panic!(
+                "\n{:?} -> {:?} \n{:?} -> {:?} \nExpected ({}, {}) but got ({}, {}).",
+                r1, r1_result, r2, r2_result, x, y, r1_result[2], r2_result[2]
+            )
         }
     }
 }

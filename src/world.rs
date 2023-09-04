@@ -1,15 +1,14 @@
-use std::cell::Cell;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use sdl2::keyboard::{KeyboardState, Keycode};
+use crate::game::Keys;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};
 use crate::player::Player;
-
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 pub(crate) struct World {
     pub(crate) regions: Vec<Region>,
-    pub(crate) player: Player
+    pub(crate) player: Player,
 }
 
 pub(crate) struct Region {
@@ -17,7 +16,7 @@ pub(crate) struct Region {
     pub(crate) walls: HashMap<usize, Wall>,
     pub(crate) lights: HashMap<usize, LightSource>,
     pub(crate) floor_material: Material,
-    pub(crate) lighting: FloorLightCache
+    pub(crate) lighting: FloorLightCache,
 }
 
 pub(crate) struct FloorLightCache {
@@ -25,7 +24,7 @@ pub(crate) struct FloorLightCache {
     pub(crate) empty_floor_light_cache: Box<[Cell<Option<Colour>>]>,
     pub(crate) width: usize,
     pub(crate) height: usize,
-    pub(crate) top_left: Vector2
+    pub(crate) top_left: Vector2,
 }
 
 #[derive(Clone, Copy)]
@@ -34,7 +33,7 @@ pub(crate) struct Portal {
     pub(crate) from_region: usize,
     pub(crate) to_wall: usize,
     pub(crate) to_region: usize,
-    pub(crate) transform: Transformation
+    pub(crate) transform: Transformation,
 }
 
 pub(crate) struct Wall {
@@ -43,7 +42,7 @@ pub(crate) struct Wall {
     pub(crate) line: LineSegment2,
     pub(crate) normal: Vector2,
     pub(crate) material: Material,
-    pub(crate) portal: Option<Portal>
+    pub(crate) portal: Option<Portal>,
 }
 
 #[derive(Clone, Copy)]
@@ -52,13 +51,13 @@ pub(crate) struct LightSource {
     pub(crate) region: usize,
     pub(crate) intensity: Colour,
     pub(crate) pos: Vector2,
-    pub(crate) kind: LightKind
+    pub(crate) kind: LightKind,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) enum LightKind {
     DIRECT(),
-    PORTAL { portal_line: LineSegment2 }
+    PORTAL { portal_line: LineSegment2 },
 }
 
 impl Wall {
@@ -80,10 +79,14 @@ impl Wall {
 }
 
 impl World {
-    pub(crate) fn new<'w>(regions: Vec<Region>, start_region_index: usize, start_pos: Vector2) -> World {
+    pub(crate) fn new<'w>(
+        regions: Vec<Region>,
+        start_region_index: usize,
+        start_pos: Vector2,
+    ) -> World {
         let mut world = World {
             regions,
-            player: Player::new(start_region_index, start_pos)
+            player: Player::new(start_region_index, start_pos),
         };
 
         // let bb = world.player.entity.get_bounding_box();
@@ -94,11 +97,11 @@ impl World {
         world
     }
 
-    pub(crate) fn update(&mut self, delta_time: f64, pressed: &KeyboardState, delta_mouse: i32){
+    pub(crate) fn update(&mut self, delta_time: f64, pressed: &Keys, delta_mouse: i32) {
         Player::update(self, &pressed, delta_time, delta_mouse);
     }
 
-    pub(crate) fn regions(&self) -> impl Iterator<Item=&Region> {
+    pub(crate) fn regions(&self) -> impl Iterator<Item = &Region> {
         self.regions.iter()
     }
 
@@ -115,11 +118,17 @@ impl World {
     }
 
     pub(crate) fn wall_mut(&mut self, region: usize, wall: usize) -> &mut Wall {
-        self.regions[region].walls.get_mut(&wall).expect("Invalid wall index.")
+        self.regions[region]
+            .walls
+            .get_mut(&wall)
+            .expect("Invalid wall index.")
     }
 
     pub(crate) fn remove_wall(&mut self, region: usize, wall: usize) {
-        self.regions[region].walls.remove(&wall).expect("Invalid wall index");
+        self.regions[region]
+            .walls
+            .remove(&wall)
+            .expect("Invalid wall index");
     }
 
     pub(crate) fn add_wall(&mut self, wall: Wall) {
@@ -132,11 +141,11 @@ impl Region {
         self.walls.get(&id).expect("Invalid wall id.")
     }
 
-    pub(crate) fn walls(&self) -> impl Iterator<Item=&Wall> {
+    pub(crate) fn walls(&self) -> impl Iterator<Item = &Wall> {
         self.walls.values()
     }
 
-    pub(crate) fn lights(&self) -> impl Iterator<Item=&LightSource> {
+    pub(crate) fn lights(&self) -> impl Iterator<Item = &LightSource> {
         self.lights.values()
     }
 }
@@ -161,7 +170,7 @@ impl Portal {
                 to_normal: to_wall.normal(),
                 from_line: from_wall.line(),
                 from_normal: from_wall.normal(),
-            }
+            },
         })
     }
 
@@ -176,14 +185,16 @@ impl Portal {
         let fraction = last_offset.length() / self.transform.from_line.direction().length();
         let new_offset = self.transform.to_line.direction().negate().scale(fraction);
         self.transform.to_line.a.add(&new_offset)
-
     }
 
     // TODO: should try scaling the direction as well,
     //       if im not superfluously normalizing it during the ray tracing,
     //       would change the length of the basis unit vector which might look cool
     pub(crate) fn rotate(&self, dir: Vector2) -> Vector2 {
-        let rot_offset = self.transform.from_normal.angle_between(&self.transform.to_normal.negate());
+        let rot_offset = self
+            .transform
+            .from_normal
+            .angle_between(&self.transform.to_normal.negate());
         let dir = dir.rotate(rot_offset);
         if dir.dot(&self.transform.to_normal) > 0.0 {
             dir
@@ -196,4 +207,3 @@ impl Portal {
         self.transform.to_line
     }
 }
-

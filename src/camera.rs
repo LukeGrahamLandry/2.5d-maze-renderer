@@ -1,10 +1,9 @@
 use crate::material::Colour;
 use crate::mth::{LineSegment2, Vector2};
-use crate::{camera2d, camera3d};
-use sdl2::pixels::Color;
-use sdl2::render::WindowCanvas;
-use std::f64::consts::PI;
 use crate::world::World;
+use crate::{camera2d, camera3d};
+use std::f64::consts::PI;
+use softbuffer::Buffer;
 
 pub const FOV_DEG: i32 = 45;
 pub const SCREEN_HEIGHT: f64 = 600.0;
@@ -12,19 +11,14 @@ pub const SCREEN_WIDTH: u32 = 800;
 pub const RESOLUTION_FACTOR: f64 = 1.0;
 pub const LIGHT_RAY_COUNT_2D: i32 = 32;
 
-pub(crate) fn render_scene(mut canvas: &mut WindowCanvas, world: & World , delta_time: f64) {
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-
+pub(crate) fn render_scene<R: RenderStrategy>(canvas: &mut R, world: &World) {
     if world.player().first_person_rendering {
-        camera3d::render(&world, &mut canvas, delta_time);
+        camera3d::render(world, canvas);
     } else {
-        camera2d::render(&world, &mut canvas, delta_time);
+        camera2d::render(world, canvas);
     }
 
     *world.player().needs_render_update.write().unwrap() = false;
-
-    canvas.present();
 }
 
 /// Converts a (distance to a wall) into a top and bottom y to draw that wall on the canvas.
@@ -58,75 +52,47 @@ pub(crate) struct ColouredLine {
     pub(crate) b: Vector2,
 }
 
-pub(crate) struct RenderBuffer<'a> {
-    current_colour: Colour,
-    pub(crate) offset: Vector2,
-    sender: &'a mut dyn FnMut(ColouredLine),
-}
-
 pub(crate) trait RenderStrategy {
     fn set_draw_color(&mut self, colour: Colour);
     fn draw_between(&mut self, start: Vector2, end: Vector2);
     fn draw_line(&mut self, line: LineSegment2);
 }
 
-impl RenderStrategy for WindowCanvas {
-    fn set_draw_color(&mut self, colour: Colour) {
-        self.set_draw_color(colour.to_u8());
-    }
-
-    fn draw_between(&mut self, start: Vector2, end: Vector2) {
-        self
-            .draw_line(start.sdl(), end.sdl())
-            .expect("SDL draw failed.");
-    }
-
-    fn draw_line(&mut self, line: LineSegment2) {
-        self
-            .draw_line(line.a.sdl(), line.b.sdl())
-            .expect("SDL draw failed.");
-    }
+pub struct SoftBufferRender<'a> {
+    pub(crate) colour: Colour,
+    pub(crate) buffer: Buffer<'a>,
+    pub width: usize,
+    pub height: usize
 }
 
-
-impl<'a> RenderStrategy for RenderBuffer<'a> {
+impl<'a> RenderStrategy for SoftBufferRender<'a> {
     fn set_draw_color(&mut self, colour: Colour) {
-        self.current_colour = colour;
+        self.colour = colour;
     }
 
     fn draw_between(&mut self, start: Vector2, end: Vector2) {
-        let (a, b) = if self.offset.is_zero() {
-            (start, end)
+        let x = start.x as usize;
+        if x >= self.width {
+            return;
+        }
+
+        let y1 = start.y.min(end.y) as usize;
+        let y2 = start.y.max(end.y) as usize;
+
+        if y1 == y2 {
+            let index = (y1 * self.width) + x;
+            self.buffer[index] = self.colour.to_packed();
         } else {
-            (start.add(&self.offset), end.add(&self.offset))
-        };
-        (self.sender)(ColouredLine {
-            a,
-            b,
-            colour: self.current_colour,
-        });
+            for y in y1.min(self.height)..y2.min(self.height) {
+                let index = (y * self.width) + x;
+                self.buffer[index] = self.colour.to_packed();
+            }
+        }
+
+
     }
 
     fn draw_line(&mut self, line: LineSegment2) {
         self.draw_between(line.a, line.b);
-    }
-}
-
-impl<'a> RenderBuffer<'a> {
-    pub(crate) fn new(sender: &mut dyn FnMut(ColouredLine)) -> RenderBuffer {
-        RenderBuffer {
-            sender,
-            current_colour: Colour::black(),
-            offset: Vector2::zero(),
-        }
-    }
-}
-
-pub(crate) fn draw_lines(window: &mut WindowCanvas, lines: Vec<ColouredLine>) {
-    for line in lines {
-        window.set_draw_color(line.colour.to_u8());
-        window
-            .draw_line(line.a.sdl(), line.b.sdl())
-            .expect("SDL draw failed.");
     }
 }
