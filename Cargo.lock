@@ -264,7 +264,7 @@ version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e51093e27b0797c359783294ca4f0a911c270184cb10f85783b118614a1501be"
 dependencies = [
- "instant 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "instant",
 ]
 
 [[package]]
@@ -318,8 +318,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be4136b2a15dd319360be1c07d9933517ccf0be8f16bf62a3bee4f0d618df427"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -354,14 +356,6 @@ dependencies = [
  "js-sys",
  "wasm-bindgen",
  "web-sys",
-]
-
-[[package]]
-name = "instant"
-version = "0.1.12"
-source = "git+https://github.com/hoodmane/instant.git?branch=emscripten-no-leading-underscore#8e4b0ed1683cb4dffdc0c132edadf1a25b914b08"
-dependencies = [
- "cfg-if",
 ]
 
 [[package]]
@@ -457,9 +451,11 @@ dependencies = [
 name = "mazerender2d"
 version = "1.0.0"
 dependencies = [
- "instant 0.1.12 (git+https://github.com/hoodmane/instant.git?branch=emscripten-no-leading-underscore)",
+ "getrandom",
  "maze",
  "softbuffer",
+ "wasm-bindgen",
+ "web-sys",
  "winit",
 ]
 
@@ -1400,7 +1396,7 @@ dependencies = [
  "core-foundation",
  "core-graphics",
  "dispatch",
- "instant 0.1.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "instant",
  "libc",
  "log",
  "mio",

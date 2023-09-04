@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use maze;
 use maze::Grid;
 use crate::material::{Colour, Material};
 use crate::mth::{LineSegment2, Vector2};

@@ -155,8 +155,8 @@ impl Region {
     }
 
     pub(crate) fn clear_floor_lighting_cache(&mut self){
-        let n = Instant::now();
+        // let n = Instant::now();
         self.lighting.floor_light_cache.clone_from_slice(self.lighting.empty_floor_light_cache.as_ref());
-        println!("reset lights in {} ms", (Instant::now() - n).as_millis());
+        // println!("reset lights in {} ms", (Instant::now() - n).as_millis());
     }
 }

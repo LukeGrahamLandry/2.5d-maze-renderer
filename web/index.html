@@ -1,0 +1,25 @@
+<script src="pkg/mazerender2d.js"></script>
+
+<button id="start"> Start Game </button>
+
+<canvas id="game"></canvas>
+
+<div>
+    <br> <a href="https://github.com/LukeGrahamLandry/2.5d-maze-renderer" style="color: rgb(0, 204, 255);"> Github </a>
+    <br> <b> About </b>
+    <br> Controls: WASD to move, right/left click to place portal, space to toggle between 2d and 3d rendering.
+    <br> Uses software rendering (no gpu). All the logic for faking the 3d effect is done from scratch without any dependencies. I'm just setting pixel values in the canvas.
+    <br> The maze generation is based on the book <i>Mazes For Programmers by Jamis Buck</i>.
+    <br> <a href="https://lukegrahamlandry.ca/" style="color: rgb(0, 204, 255);"> See my other projects </a>
+</div>
+
+<script type="module">
+    import init from './pkg/mazerender2d.js';
+    document.getElementById("start").addEventListener("click", (e) => {
+        document.getElementById("start").remove();
+        init();
+        setTimeout(() => {
+            document.getElementById("game").focus();
+        }, 500);  // Wait for winit to grab the canvas? IDK but keyboard input doesn't work without this.
+    });
+</script>

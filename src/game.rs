@@ -1,18 +1,12 @@
-use std::thread;
-use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::camera;
-use crate::player::Player;
 use crate::world::World;
 use crate::world_gen::random_maze_world;
 
-// TODO: calculate dynamically based on target FPS
-const FRAME_DELAY_MS: u64 = 0;
-const IDLE_FRAME_DELAY_MS: u64 = 20;
+use crate::println;
 
 pub(crate) struct GameState {
     pub(crate) world: World,
-    start: Instant,
     seconds_counter: f64,
     pub(crate) render_frame_counter: i32,
     idle_frame_counter: i32,
@@ -20,6 +14,7 @@ pub(crate) struct GameState {
     total_delay_ms: u64,
     pub(crate) delta_mouse: f32,
     pub keys: Keys,
+    prev: f64
 }
 
 impl GameState {
@@ -28,7 +23,6 @@ impl GameState {
 
         GameState {
             world,
-            start: Instant::now(),
             seconds_counter: 0.0,
             render_frame_counter: 0,
             idle_frame_counter: 0,
@@ -36,11 +30,14 @@ impl GameState {
             total_delay_ms: 0,
             delta_mouse: 0.0,
             keys: Keys::empty(),
+            prev: 0.0,
         }
     }
 
     pub(crate) fn tick(&mut self) -> bool {
-        let duration = self.start.elapsed().as_secs_f64();
+        let now = perf_now();
+        let duration = now - self.prev;
+        self.prev = now;
 
         self.seconds_counter += duration;
 
@@ -63,13 +60,12 @@ impl GameState {
             self.idle_frame_counter = 0;
         }
 
-        self.start = Instant::now();
         self.world.update(duration, &self.keys, self.delta_mouse as i32);
         self.delta_mouse = 0.0;
 
         // If you didn't move or turn and nothing in the world changed, don't bother redrawing the screen.
-        // TODO: this needs to wait for lighting updates
-        *self.world.player().needs_render_update.read().unwrap()
+        let changed = *self.world.player().needs_render_update.read().unwrap();
+        changed
     }
 
     pub fn reset_world(&mut self) {
@@ -88,6 +84,7 @@ impl GameState {
     }
 }
 
+#[derive(Debug)]
 pub struct Keys {
     pub w: bool,
     pub a: bool,
@@ -105,5 +102,21 @@ impl Keys {
             d: false,
             f: false,
         }
+    }
+}
+
+fn perf_now() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+
+        let window = web_sys::window().expect("should have a window in this context");
+        let performance = window
+            .performance()
+            .expect("performance should be available");
+        performance.now() / 1000.0
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs_f64()
     }
 }

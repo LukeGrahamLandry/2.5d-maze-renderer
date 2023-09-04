@@ -14,7 +14,10 @@ impl Colour {
     }
 
     pub(crate) fn to_packed(&self) -> u32 {
-        ((self.b * 255.0) as u32) | (((self.g * 255.0) as u32) << 8) | (((self.r * 255.0) as u32) << 16)
+        let r = (self.r.min(1.0).max(0.0) * 255.0) as u32;
+        let g = (self.g.min(1.0).max(0.0) * 255.0) as u32;
+        let b = (self.b.min(1.0).max(0.0) * 255.0) as u32;
+        b | g << 8 | r << 16
     }
 
     pub(crate) fn black() -> Colour {
